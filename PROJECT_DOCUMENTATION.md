@@ -2,9 +2,15 @@
 
 ## Introducción
 
-Este proyecto es una aplicación web de dashboard desarrollada con una arquitectura frontend-backend. El frontend está completamente implementado utilizando React, Vite y TypeScript, proporcionando una interfaz de usuario moderna y responsiva para un dashboard administrativo. El backend está en una fase inicial, con solo la configuración base en Node.js, preparado para futuras implementaciones de API.
+GiovSoft es una aplicación web con arquitectura frontend-backend. El frontend está construido con React, Vite y TypeScript, e incluye dos experiencias principales:
+
+- Un sitio web público para promocionar servicios tecnológicos para pequeñas empresas.
+- Un panel administrativo interno disponible en una ruta separada.
+
+El backend se mantiene en fase inicial con configuración base en Node.js, preparado para futuras APIs.
 
 El proyecto se organiza en dos directorios principales:
+
 - `frontend/`: Contiene la aplicación React completa.
 - `backend/`: Contiene la configuración inicial del servidor Node.js.
 
@@ -12,209 +18,266 @@ El proyecto se organiza en dos directorios principales:
 
 La aplicación sigue una arquitectura cliente-servidor separada:
 
-- **Frontend**: Aplicación React single-page application (SPA) construida con Vite para desarrollo rápido y TypeScript para tipado fuerte. Incluye componentes reutilizables, estilos globales con CSS variables y un diseño responsivo.
-- **Backend**: Servidor Node.js preparado para implementar una API REST o GraphQL. Actualmente vacío, pero configurado para añadir frameworks como Express.
+- **Frontend**: SPA en React con Vite, TypeScript, React Router, `lucide-react` y estilos globales en CSS.
+- **Backend**: Proyecto Node.js preparado para implementar una API REST o GraphQL.
 
 Estado actual:
-- Frontend: Completo y funcional.
-- Backend: Solo configuración base, pendiente de implementación.
+
+- Frontend: Sitio público y dashboard administrativo funcionales.
+- Backend: Configuración base, pendiente de implementación.
+
+### Rutas Principales
+
+- `/`: Sitio web público de GiovSoft.
+- `/admin`: Panel administrativo interno.
+- `*`: Redirección al sitio público.
 
 ### Diagrama de Arquitectura
 
-```
-+-------------------+       +-------------------+
-|     Frontend      |       |     Backend       |
-|                   |       |                   |
-| - React/Vite      | <-->  | - Node.js         |
-| - TypeScript      |       | - (Express TBD)   |
-| - CSS Variables   |       | - API Endpoints   |
-| - Dashboard UI    |       |                   |
-+-------------------+       +-------------------+
+```text
++-----------------------------+       +-------------------+
+|          Frontend           |       |      Backend      |
+|                             |       |                   |
+| - React / Vite              | <---> | - Node.js         |
+| - TypeScript                |       | - API futura      |
+| - React Router              |       | - Express TBD     |
+| - Sitio público             |       | - Endpoints TBD   |
+| - Panel admin               |       |                   |
++-----------------------------+       +-------------------+
 ```
 
 ## Frontend
 
 ### Tecnologías Utilizadas
+
 - **React**: Biblioteca para construir interfaces de usuario.
-- **Vite**: Herramienta de desarrollo rápida para proyectos modernos.
-- **TypeScript**: Superset de JavaScript con tipado estático.
-- **CSS**: Estilos globales con variables CSS para temas consistentes.
+- **Vite**: Herramienta de desarrollo y build.
+- **TypeScript**: Tipado estático.
+- **React Router DOM**: Rutas públicas y administrativas.
+- **Lucide React**: Iconografía.
+- **CSS global**: Variables, modo claro/oscuro, responsive design y animaciones.
 
 ### Estructura de Archivos
-```
+
+```text
 frontend/
+├── public/
+│   ├── favicon.svg
+│   ├── icons.svg
+│   └── img/
+│       ├── logo-black.svg
+│       └── logo-white.svg
 ├── src/
-│   ├── App.tsx              # Componente principal de la aplicación
+│   ├── App.tsx              # Configuración de rutas
 │   ├── main.tsx             # Punto de entrada de React
-│   ├── index.css            # Estilos globales
-│   ├── assets/              # Recursos estáticos
-│   ├── components/          # Componentes reutilizables
-│   │   ├── Header.tsx       # Barra de navegación superior
-│   │   ├── Layout.tsx       # Layout general
-│   │   └── Sidebar.tsx      # Barra lateral de navegación
-│   └── pages/               # Páginas de la aplicación
-│       └── Dashboard.tsx    # Página principal del dashboard
-├── public/                  # Archivos públicos
-├── package.json             # Dependencias y scripts
-├── vite.config.ts           # Configuración de Vite
-├── tsconfig.json            # Configuración de TypeScript
-└── README.md                # Documentación específica del frontend
+│   ├── index.css            # Estilos globales del sitio y admin
+│   ├── assets/
+│   │   └── hero.png         # Visual principal del sitio
+│   ├── components/
+│   │   ├── Header.tsx       # Header del panel administrativo
+│   │   ├── Layout.tsx       # Layout del panel administrativo
+│   │   └── Sidebar.tsx      # Sidebar del panel administrativo
+│   └── pages/
+│       ├── Dashboard.tsx    # Panel administrativo
+│       └── Website.tsx      # Sitio web público
+├── package.json
+├── vite.config.ts
+└── tsconfig.json
 ```
+
+## Sitio Web Público
+
+El sitio público está implementado en `frontend/src/pages/Website.tsx` y se sirve desde `/`.
+
+### Objetivo Comercial
+
+Promocionar a GiovSoft como aliado tecnológico para pequeñas empresas, con enfoque en:
+
+- Sitios web.
+- Ecommerce.
+- Correos corporativos.
+- Google Workspace.
+- Dominios.
+- Presencia digital profesional.
+
+### Secciones Implementadas
+
+- **Header público**: Logo adaptable a modo claro/oscuro, navegación, cambio de tema y CTA a WhatsApp.
+- **Hero**: Propuesta de valor, chips de servicios, visual tecnológico animado y CTA.
+- **Métricas**: Cards compactas con iconos y beneficios comerciales.
+- **Servicios**: Cards de servicios con iconos y hover.
+- **Proceso**: Timeline vertical animado con nodos, línea de progreso y cards tecnológicas.
+- **Aliado tecnológico**: Beneficios y stack de capacidades.
+- **Footer compacto**: Logo, contacto, redes sociales, mapa del sitio, servicios, legales y acceso administrativo.
+
+### Modo Claro/Oscuro
+
+El sitio público incluye cambio de tema:
+
+- Estado local en `Website.tsx`.
+- Persistencia en `localStorage` bajo la clave `site-theme`.
+- Logos separados para cada modo:
+  - `public/img/logo-white.svg`
+  - `public/img/logo-black.svg`
+- Transición visual usando `document.startViewTransition` cuando el navegador lo soporta.
+- Fallback con transiciones CSS.
+
+### WhatsApp
+
+El CTA principal del header dice **Enviar mensaje** y abre WhatsApp con un mensaje prellenado:
+
+```text
+Hola GiovSoft, quiero información sobre sus servicios digitales.
+```
+
+Actualmente usa un enlace genérico de WhatsApp. Cuando se defina el número oficial, debe actualizarse al formato:
+
+```text
+https://wa.me/52XXXXXXXXXX?text=...
+```
+
+## Panel Administrativo
+
+El panel administrativo está disponible en `/admin`.
 
 ### Componentes Principales
-- **Header**: Barra superior con navegación, búsqueda y perfil de usuario.
-- **Sidebar**: Menú lateral colapsable con enlaces de navegación.
-- **Dashboard**: Página principal con paneles de métricas, actividades y prioridades.
 
-### Estilos
-Los estilos se definen en `index.css` utilizando variables CSS para mantener consistencia:
+- **Layout**: Estructura general del admin.
+- **Sidebar**: Menú lateral colapsable.
+- **Header**: Barra superior del panel.
+- **Dashboard**: Vista inicial con métricas, actividad reciente y prioridades.
 
-```css
-:root {
-  --bg-page: #f5efe4;
-  --text-main: #162132;
-  --surface: rgba(255, 255, 255, 0.72);
-  /* ... más variables */
-}
-```
+### Estado Actual
 
-El diseño es responsivo con media queries para diferentes tamaños de pantalla.
+El admin sigue siendo una maqueta funcional de dashboard. No está conectado a backend ni autenticación.
 
-### Configuración
-- **Vite**: Configurado en `vite.config.ts` para desarrollo y construcción.
-- **TypeScript**: Configurado en `tsconfig.json` con opciones estrictas.
+## Estilos
+
+Los estilos se concentran en `frontend/src/index.css`.
+
+Incluyen:
+
+- Variables CSS para tema administrativo.
+- Variables CSS específicas del sitio público.
+- Modo claro/oscuro del sitio.
+- Animaciones de hero, timeline, cards y cambio de tema.
+- Diseño responsive.
+- Estilos del footer, servicios, métricas y proceso.
+
+### Consideraciones de Diseño
+
+- El sitio público prioriza una estética tecnológica, limpia y orientada a pequeñas empresas.
+- El panel admin conserva su diseño operativo.
+- El sitio público y el admin comparten archivo CSS, pero usan clases diferenciadas (`site-*`, `footer-*`, `timeline-*`, etc.) para reducir interferencias.
 
 ## Backend
 
 ### Tecnologías Utilizadas
-- **Node.js**: Entorno de ejecución para JavaScript en servidor.
-- **(Planeado) Express**: Framework web para Node.js.
+
+- **Node.js**: Entorno de ejecución.
+- **Express**: Planeado para futuras rutas API.
 
 ### Estado Actual
-El backend está en fase inicial con solo el archivo `package.json` configurado. No hay código fuente implementado, endpoints o base de datos.
 
-### Estructura Pendiente
-```
+El backend está en fase inicial. No hay endpoints, base de datos ni autenticación implementados.
+
+### Estructura Planeada
+
+```text
 backend/
-├── index.js                 # Punto de entrada del servidor
-├── routes/                  # Definición de rutas API
-├── controllers/             # Lógica de negocio
-├── models/                  # Modelos de datos
-├── middleware/              # Middleware personalizado
-├── config/                  # Configuraciones
-└── package.json             # Dependencias
+├── index.js
+├── routes/
+├── controllers/
+├── models/
+├── middleware/
+├── config/
+└── package.json
 ```
-
-### Tecnologías Planeadas
-- Framework: Express.js para manejo de rutas y middleware.
-- Base de datos: MongoDB o PostgreSQL (por determinar).
-- Autenticación: JWT o similar.
-- Validación: Librerías como Joi.
 
 ## Instalación y Ejecución
 
 ### Frontend
-1. Navegar al directorio `frontend/`:
-   ```bash
-   cd frontend
-   ```
-2. Instalar dependencias:
-   ```bash
-   npm install
-   ```
-3. Ejecutar en modo desarrollo:
-   ```bash
-   npm run dev
-   ```
-4. Construir para producción:
-   ```bash
-   npm run build
-   ```
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Construcción para producción:
+
+```bash
+npm run build
+```
+
+Vista previa de producción:
+
+```bash
+npm run preview
+```
 
 ### Backend
-1. Navegar al directorio `backend/`:
-   ```bash
-   cd backend
-   ```
-2. Instalar dependencias (actualmente ninguna):
-   ```bash
-   npm install
-   ```
-3. Ejecutar (pendiente de implementación):
-   ```bash
-   npm start
-   ```
 
-Nota: El backend requiere implementación antes de poder ejecutarse.
+```bash
+cd backend
+npm install
+```
 
-## Dependencias y Configuraciones
+La ejecución del backend queda pendiente hasta implementar el servidor.
 
-### Frontend (package.json)
-- **Dependencias principales**: react, react-dom, typescript.
-- **Dependencias de desarrollo**: vite, eslint, typescript.
-- **Scripts**: dev, build, lint, preview.
+## Dependencias Frontend
 
-### Backend (package.json)
-- Actualmente sin dependencias.
-- Scripts: test (predeterminado).
+Dependencias principales actuales:
 
-### Variables CSS
-Definidas en `frontend/src/index.css` para colores, sombras y espaciado.
+- `react`
+- `react-dom`
+- `react-router-dom`
+- `lucide-react`
+- `axios`
 
-### Configuraciones TypeScript
-- `tsconfig.json`: Configuración estricta con soporte para JSX y módulos ES.
+Scripts principales:
 
-## Guía de Desarrollo
+- `npm run dev`
+- `npm run build`
+- `npm run lint`
+- `npm run preview`
 
-### Añadir Componentes
-1. Crear archivo en `frontend/src/components/`.
-2. Importar y usar en páginas o layouts.
-3. Seguir convenciones de nomenclatura y tipado TypeScript.
+## Roadmap Sugerido
 
-### Modificar Estilos
-- Usar variables CSS para consistencia.
-- Añadir clases en `index.css` o archivos específicos.
+### Sitio Público
 
-### Implementar Backend
-1. Instalar Express: `npm install express`.
-2. Crear `index.js` con servidor básico.
-3. Añadir rutas y conectar con frontend.
+- Definir número oficial de WhatsApp y actualizar el enlace.
+- Crear páginas o modales reales para:
+  - Términos y condiciones.
+  - Política de privacidad.
+  - Aviso legal.
+- Sustituir enlaces temporales de redes sociales por URLs oficiales.
+- Optimizar SEO: meta tags, Open Graph, descripción y favicon final.
+- Agregar formulario de contacto o integración CRM.
 
-## Roadmap
+### Admin
 
-### Fase 1: Backend Básico (1-2 semanas)
-- Instalar Express y dependencias necesarias.
-- Crear servidor básico con endpoint de prueba.
-- Configurar variables de entorno (.env).
+- Implementar autenticación.
+- Conectar métricas a backend real.
+- Crear módulos de usuarios, servicios, clientes o solicitudes.
+- Agregar protección de ruta para `/admin`.
 
-### Fase 2: API para Dashboard (2-3 semanas)
-- Implementar endpoints para métricas, actividades y prioridades.
-- Conectar frontend con backend via fetch/API calls.
-- Añadir validación y manejo de errores.
+### Backend
 
-### Fase 3: Autenticación y Seguridad (1 semana)
-- Implementar login/logout.
-- Añadir middleware de autenticación.
-- Proteger rutas sensibles.
-
-### Fase 4: Mejoras Frontend (2 semanas)
-- Añadir más páginas (e.g., configuración, usuarios).
-- Implementar estado global (Context o Redux).
-- Optimizar rendimiento y accesibilidad.
-
-### Fase 5: Despliegue (1 semana)
-- Configurar CI/CD.
-- Desplegar en servicios como Vercel/Netlify (frontend) y Heroku/AWS (backend).
-- Añadir monitoreo y logging.
+- Instalar y configurar Express.
+- Crear endpoints base.
+- Agregar base de datos.
+- Implementar autenticación y autorización.
+- Configurar variables de entorno.
 
 ## Recomendaciones
 
-- **Prioridades**: Enfocarse primero en implementar el backend básico para conectar el frontend existente.
-- **Detalles en Roadmap**: Estimar plazos basados en complejidad; por ejemplo, backend básico en 1 semana, API completa en 3 semanas.
-- **Diagramas Adicionales**: Considerar un diagrama de flujo de datos (e.g., usuario -> frontend -> API -> base de datos) y uno de componentes (e.g., árbol de componentes React).
-- **Mejores Prácticas**: Usar ESLint y Prettier para código consistente; añadir tests unitarios con Jest.
-- **Escalabilidad**: Planear para múltiples entornos (desarrollo, staging, producción).
+- Mantener el sitio público separado conceptualmente del admin.
+- Evitar que nuevos estilos globales del admin afecten clases `site-*`.
+- Documentar cada nueva ruta pública o administrativa.
+- Crear componentes separados si `Website.tsx` sigue creciendo.
+- Agregar pruebas básicas cuando se conecten formularios, autenticación o pagos.
 
 ---
 
-Fecha de creación: 20 de abril de 2026
+Última actualización: 29 de abril de 2026.

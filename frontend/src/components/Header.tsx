@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Bell, Menu, Search, Sparkles, User } from "lucide-react";
+import { Bell, Menu, User } from "lucide-react";
 
 interface Props {
   collapsed: boolean;
