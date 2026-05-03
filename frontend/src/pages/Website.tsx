@@ -1,51 +1,21 @@
-import { useEffect, useState } from "react";
 import {
   ArrowRight,
-  AtSign,
   BadgeCheck,
-  ChartNetwork,
   CheckCircle2,
   Clock3,
   Code2,
   Globe2,
-  LockKeyhole,
-  Mail,
-  MonitorSmartphone,
-  Moon,
-  PanelsTopLeft,
   Rocket,
   SearchCheck,
   ShieldCheck,
-  Share2,
-  ShoppingCart,
   Store,
-  Sun,
   TrendingUp,
 } from "lucide-react";
+import SiteFooter from "../components/SiteFooter";
+import SiteHeader from "../components/SiteHeader";
 import heroImage from "../assets/hero.png";
-
-const services = [
-  {
-    title: "Sitios web",
-    copy: "Páginas modernas, rápidas y claras para presentar tu negocio, captar clientes y transmitir confianza.",
-    icon: MonitorSmartphone,
-  },
-  {
-    title: "Ecommerce",
-    copy: "Tiendas en línea para vender productos, recibir pedidos y abrir nuevos canales de venta.",
-    icon: ShoppingCart,
-  },
-  {
-    title: "Correos corporativos",
-    copy: "Cuentas profesionales con tu dominio, configuración segura y una imagen más confiable ante tus clientes.",
-    icon: Mail,
-  },
-  {
-    title: "Google Workspace",
-    copy: "Implementación de Gmail empresarial, Drive, Meet, Calendario y administración de usuarios para tu equipo.",
-    icon: PanelsTopLeft,
-  },
-];
+import { serviceItems } from "../data/services";
+import { useSiteTheme } from "../hooks/useSiteTheme";
 
 const stack = [
   "Web responsive",
@@ -108,116 +78,12 @@ const processSteps = [
   },
 ];
 
-const footerSections = [
-  {
-    title: "Mapa del sitio",
-    links: [
-      { label: "Inicio", href: "#inicio" },
-      { label: "Servicios", href: "#servicios" },
-      { label: "Proceso", href: "#proceso" },
-      { label: "Aliado tecnológico", href: "#aliado" },
-    ],
-  },
-  {
-    title: "Servicios",
-    links: [
-      { label: "Sitios web", href: "#servicios" },
-      { label: "Ecommerce", href: "#servicios" },
-      { label: "Correos corporativos", href: "#servicios" },
-      { label: "Google Workspace", href: "#servicios" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { label: "Términos y condiciones", href: "#terminos" },
-      { label: "Política de privacidad", href: "#privacidad" },
-      { label: "Aviso legal", href: "#aviso-legal" },
-    ],
-  },
-];
-
-const socialLinks = [
-  { label: "Facebook", href: "https://facebook.com", icon: Share2 },
-  { label: "Instagram", href: "https://instagram.com", icon: AtSign },
-  { label: "LinkedIn", href: "https://linkedin.com", icon: ChartNetwork },
-];
-
-const whatsappMessage = encodeURIComponent(
-  "Hola GiovSoft, quiero información sobre sus servicios digitales."
-);
-
 export default function Website() {
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    const storedTheme = window.localStorage.getItem("site-theme");
-
-    return storedTheme === "dark" ? "dark" : "light";
-  });
-
-  useEffect(() => {
-    window.localStorage.setItem("site-theme", theme);
-  }, [theme]);
-
-  const isDark = theme === "dark";
-  const toggleTheme = () => {
-    const nextTheme = isDark ? "light" : "dark";
-    const transitionDocument = document as Document & {
-      startViewTransition?: (callback: () => void) => void;
-    };
-
-    if (transitionDocument.startViewTransition) {
-      transitionDocument.startViewTransition(() => setTheme(nextTheme));
-      return;
-    }
-
-    setTheme(nextTheme);
-  };
+  const { isDark, toggleTheme } = useSiteTheme();
 
   return (
     <div className={`site-shell ${isDark ? "is-dark" : ""}`}>
-      <header className="site-header">
-        <a className="site-brand" href="#inicio" aria-label="GiovSoft inicio">
-          <img
-            className="site-logo site-logo-light"
-            src="/img/logo-white.svg"
-            alt="GiovSoft"
-          />
-          <img
-            className="site-logo site-logo-dark"
-            src="/img/logo-black.svg"
-            alt="GiovSoft"
-            aria-hidden="true"
-          />
-        </a>
-
-        <nav className="site-nav" aria-label="Navegación principal">
-          <a href="#servicios">Servicios</a>
-          <a href="#proceso">Proceso</a>
-          <a href="#aliado">Aliado</a>
-        </nav>
-
-        <div className="site-header-actions">
-          <button
-            className="theme-toggle"
-            type="button"
-            onClick={toggleTheme}
-            aria-label={isDark ? "Activar modo claro" : "Activar modo oscuro"}
-            title={isDark ? "Modo claro" : "Modo oscuro"}
-          >
-            {isDark ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-
-          <a
-            className="site-nav-action"
-            href={`https://wa.me/?text=${whatsappMessage}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Enviar mensaje
-            <ArrowRight size={16} />
-          </a>
-        </div>
-      </header>
+      <SiteHeader isDark={isDark} toggleTheme={toggleTheme} />
 
       <main>
         <section id="inicio" className="site-hero">
@@ -295,7 +161,7 @@ export default function Website() {
           </div>
 
           <div className="service-grid">
-            {services.map((service) => {
+            {serviceItems.map((service) => {
               const Icon = service.icon;
 
               return (
@@ -305,6 +171,10 @@ export default function Website() {
                   </div>
                   <h3>{service.title}</h3>
                   <p>{service.copy}</p>
+                  <a className="service-link" href={`/servicios/${service.slug}`}>
+                    Ver servicio
+                    <ArrowRight size={15} />
+                  </a>
                 </article>
               );
             })}
@@ -376,59 +246,7 @@ export default function Website() {
         </section>
       </main>
 
-      <footer id="contacto" className="site-footer">
-        <div className="footer-main">
-          <div className="footer-brand">
-            <img
-              src={isDark ? "/img/logo-black.svg" : "/img/logo-white.svg"}
-              alt="GiovSoft"
-            />
-            <p>
-              Aliado tecnológico para pequeñas empresas que quieren vender,
-              comunicarse y crecer con una base digital profesional.
-            </p>
-            <a className="footer-contact" href="mailto:contacto@giovsoft.com">
-              contacto@giovsoft.com
-              <LockKeyhole size={15} />
-            </a>
-            <div className="footer-social" aria-label="Redes sociales">
-              {socialLinks.map((social) => {
-                const Icon = social.icon;
-
-                return (
-                  <a
-                    key={social.label}
-                    href={social.href}
-                    aria-label={social.label}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <Icon size={18} />
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="footer-links">
-            {footerSections.map((section) => (
-              <nav key={section.title} aria-label={section.title}>
-                <h3>{section.title}</h3>
-                {section.links.map((link) => (
-                  <a key={link.label} href={link.href}>
-                    {link.label}
-                  </a>
-                ))}
-              </nav>
-            ))}
-          </div>
-        </div>
-
-        <div className="footer-bottom">
-          <span>© 2026 GiovSoft. Todos los derechos reservados.</span>
-          <a href="/admin">Acceso administrativo</a>
-        </div>
-      </footer>
+      <SiteFooter isDark={isDark} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
+import ServicePage from "./pages/ServicePage";
 import Website from "./pages/Website";
 
 function App() {
@@ -8,6 +9,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Website />} />
+        <Route path="/servicios/:slug" element={<ServicePage />} />
         <Route
           path="/admin"
           element={
