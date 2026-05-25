@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: giovsoft-backend
+    environment:
+      PORT: 4000
+      FRONTEND_ORIGIN: http://localhost:8080,http://localhost:5173
+    ports:
+      - "4000:4000"
+    volumes:
+      - backend-data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""
+    container_name: giovsoft-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  backend-data:

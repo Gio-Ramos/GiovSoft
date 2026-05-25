@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Bell, Menu, User } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 interface Props {
   collapsed: boolean;
@@ -7,6 +8,17 @@ interface Props {
 }
 
 export default function Header({ collapsed, setCollapsed }: Props) {
+  const { pathname } = useLocation();
+  const titleByPath: Record<string, string> = {
+    "/admin": "Resumen GiovSoft",
+    "/admin/solicitudes": "Solicitudes GiovSoft",
+    "/admin/clientes": "Clientes GiovSoft",
+    "/admin/seguimiento": "Seguimiento GiovSoft",
+    "/admin/servicios": "Servicios GiovSoft",
+    "/admin/reportes": "Reportes GiovSoft",
+    "/admin/ajustes": "Ajustes GiovSoft",
+  };
+
   return (
     <header className="header-shell">
       <div className="header-bar">
@@ -20,13 +32,12 @@ export default function Header({ collapsed, setCollapsed }: Props) {
           </button>
 
           <div className="header-copy">
-            <p className="eyebrow">Centro operativo</p>
-            <h1>Dashboard</h1>
+            <p className="eyebrow">Panel administrativo</p>
+            <h1>{titleByPath[pathname] || "Panel GiovSoft"}</h1>
           </div>
         </div>
 
         <div className="header-actions">
-
           <button className="icon-button notification-button" aria-label="Notificaciones">
             <Bell size={18} />
             <span className="notification-dot" />

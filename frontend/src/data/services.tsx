@@ -40,15 +40,16 @@ export const serviceItems = [
   {
     slug: "ecommerce",
     title: "Ecommerce",
-    copy: "Tiendas en línea para vender productos, recibir pedidos y abrir nuevos canales de venta.",
+    copy: "Tiendas en linea para vender productos, recibir pedidos e integrar pagos y envios con plataformas externas.",
     detail:
-      "Implementamos tiendas en línea para que puedas mostrar productos, recibir pedidos y empezar a vender con una operación más ordenada.",
-    outcome: "Un canal de venta digital listo para atender clientes más allá del mostrador.",
+      "Implementamos tiendas en linea para que puedas mostrar productos, recibir pedidos, conectar pagos con Stripe o Mercado Pago e integrar soluciones de envio como Skydrop o Envia.com segun la etapa del negocio.",
+    outcome: "Un canal de venta digital listo para cobrar, gestionar pedidos y coordinar envios.",
     features: [
-      "Catálogo de productos organizado por categorías.",
+      "Catalogo de productos organizado por categorias.",
       "Carrito, flujo de compra y pedidos.",
-      "Integración con medios de contacto o pago según la etapa del negocio.",
-      "Panel o flujo operativo para administrar ventas.",
+      "Integraciones con Stripe, Mercado Pago u otros medios de pago.",
+      "Conexiones con Skydrop, Envia.com u operadores logisticos compatibles.",
+      "Panel o flujo operativo para administrar ventas, pagos y envios.",
     ],
     icon: ShoppingCart,
   },

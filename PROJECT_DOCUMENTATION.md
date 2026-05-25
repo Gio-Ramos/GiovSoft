@@ -19,12 +19,13 @@ El proyecto se organiza en dos directorios principales:
 La aplicacion sigue una arquitectura cliente-servidor separada:
 
 - **Frontend**: SPA en React con Vite, TypeScript, React Router, `lucide-react` y estilos globales en CSS.
-- **Backend**: Proyecto Node.js preparado para implementar una API REST o GraphQL.
+- **Backend**: API REST en Node.js con Express, CORS y persistencia local en JSON.
 
 Estado actual:
 
-- Frontend: Sitio publico, paginas de servicios y dashboard administrativo funcionales.
-- Backend: Configuracion base, pendiente de implementacion.
+- Frontend: Sitio publico, paginas de servicios, formulario de contacto y dashboard administrativo funcionales.
+- Backend: API Express funcional con endpoints de contacto y resumen administrativo.
+- Docker: Configuracion de contenedores para frontend y backend mediante Docker Compose.
 
 ### Rutas Principales
 
@@ -174,7 +175,15 @@ Elementos visuales:
 - Dashboard de tienda activa.
 - Tarjetas de producto.
 - Flujo Carrito -> Pago -> Entrega.
+- Banda de integraciones: Stripe, Mercado Pago, Skydrop, Envia.com y WhatsApp.
 - Metricas y tarjetas de operacion comercial.
+
+Alcance comercial:
+
+- Catalogo, carrito y pedidos.
+- Integracion con pasarelas como Stripe y Mercado Pago.
+- Integracion con soluciones logisticas como Skydrop, Envia.com u operadores compatibles.
+- Base para administrar ventas, pagos y envios.
 
 #### Correos corporativos
 
@@ -237,10 +246,10 @@ El CTA principal del header dice **Enviar mensaje** y abre WhatsApp con un mensa
 Hola GiovSoft, quiero informacion sobre sus servicios digitales.
 ```
 
-Actualmente usa un enlace generico de WhatsApp. Cuando se defina el numero oficial, debe actualizarse al formato:
+El numero oficial de WhatsApp configurado es `5566042994`, usando formato internacional para Mexico:
 
 ```text
-https://wa.me/52XXXXXXXXXX?text=...
+https://wa.me/525566042994?text=...
 ```
 
 ## Panel Administrativo
@@ -256,7 +265,7 @@ El panel administrativo esta disponible en `/admin`.
 
 ### Estado Actual
 
-El admin sigue siendo una maqueta funcional de dashboard. No esta conectado a backend ni autenticacion.
+El admin ya consulta el backend para mostrar resumen de solicitudes, leads recientes y prioridades. Aun no cuenta con autenticacion ni proteccion de ruta.
 
 ## Estilos
 
@@ -284,17 +293,83 @@ Incluyen:
 ### Tecnologias Utilizadas
 
 - **Node.js**: Entorno de ejecucion.
-- **Express**: Planeado para futuras rutas API.
+- **Express**: Servidor HTTP y rutas REST.
+- **CORS**: Acceso controlado desde frontend local o contenedorizado.
+- **Nodemailer**: Envio de autorespuesta al cliente y notificacion administrativa por correo.
+- **JSON local**: Persistencia inicial de solicitudes en `backend/data/contact-requests.json`.
 
 ### Estado Actual
 
-El backend esta en fase inicial. No hay endpoints, base de datos ni autenticacion implementados.
+El backend ya expone endpoints iniciales para formularios y panel administrativo. La persistencia es local en JSON, suficiente para desarrollo y pruebas. Para produccion debe migrarse a una base de datos.
+
+### Endpoints Implementados
+
+```text
+GET  /api/health
+POST /api/contact-requests
+GET  /api/admin/contact-requests
+GET  /api/admin/summary
+```
+
+### Formulario de Contacto
+
+La pagina `/contacto` envia solicitudes al backend mediante:
+
+```text
+POST /api/contact-requests
+```
+
+Campos principales:
+
+- `name`
+- `company`
+- `email`
+- `phone`
+- `service`
+- `message`
+
+Al registrarse una solicitud:
+
+- Se guarda en `backend/data/contact-requests.json`.
+- Aparece en el panel administrativo.
+- Si SMTP esta configurado, se envia una autorespuesta al correo del cliente.
+- Si SMTP esta configurado, se envia una notificacion al correo administrativo.
+- Si SMTP no esta configurado, la solicitud se guarda igual y queda marcada con `emailStatus: skipped`.
+- Los correos usan plantilla HTML profesional con logo embebido, resumen de solicitud y CTA. Incluyen animacion CSS suave cuando el cliente de correo la soporta.
+
+### Configuracion de Correo
+
+Variables disponibles en `backend/.env.example`:
+
+```text
+SMTP_HOST
+SMTP_PORT
+SMTP_SECURE
+SMTP_USER
+SMTP_PASS
+SMTP_FROM
+ADMIN_EMAIL
+```
+
+Para que los correos salgan realmente, estas variables deben configurarse en el entorno donde corre el backend.
+
+### Panel Administrativo
+
+El dashboard de `/admin` consulta:
+
+```text
+GET /api/admin/summary
+```
+
+Con esta informacion muestra solicitudes de hoy, leads activos, solicitudes de los ultimos 7 dias, actividad reciente y prioridades de seguimiento.
 
 ### Estructura Planeada
 
 ```text
 backend/
 |-- index.js
+|-- Dockerfile
+|-- data/
 |-- routes/
 |-- controllers/
 |-- models/
@@ -330,9 +405,45 @@ npm run preview
 ```bash
 cd backend
 npm install
+npm run dev
 ```
 
-La ejecucion del backend queda pendiente hasta implementar el servidor.
+API local:
+
+```text
+http://localhost:4000
+```
+
+## Docker
+
+El proyecto incluye Docker para frontend y backend:
+
+```text
+docker-compose.yml
+frontend/Dockerfile
+frontend/nginx.conf
+backend/Dockerfile
+```
+
+Levantar todo el proyecto:
+
+```bash
+docker compose up --build
+```
+
+Servicios expuestos:
+
+- Frontend: `http://localhost:8080`
+- Backend: `http://localhost:4000`
+
+Notas:
+
+- El frontend usa rutas relativas `/api`.
+- En desarrollo, Vite redirige `/api` hacia `http://localhost:4000`.
+- En Docker, Nginx redirige `/api` hacia el servicio `backend:4000`.
+- El backend permite CORS desde `http://localhost:8080` y `http://localhost:5173`.
+- La informacion local del backend se guarda en el volumen `backend-data`.
+- Docker Desktop debe estar iniciado antes de ejecutar `docker compose up --build`.
 
 ## Dependencias Frontend
 
@@ -374,17 +485,15 @@ Scripts principales:
 ### Admin
 
 - Implementar autenticacion.
-- Conectar metricas a backend real.
 - Crear modulos de usuarios, servicios, clientes o solicitudes.
 - Agregar proteccion de ruta para `/admin`.
 
 ### Backend
 
-- Instalar y configurar Express.
-- Crear endpoints base.
 - Agregar base de datos.
 - Implementar autenticacion y autorizacion.
 - Configurar variables de entorno.
+- Agregar estados de seguimiento para solicitudes.
 
 ## Recomendaciones
 

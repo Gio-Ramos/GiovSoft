@@ -4,6 +4,7 @@ import { serviceItems } from "../data/services";
 const whatsappMessage = encodeURIComponent(
   "Hola GiovSoft, quiero información sobre sus servicios digitales."
 );
+const whatsappUrl = `https://wa.me/525566042994?text=${whatsappMessage}`;
 
 interface SiteHeaderProps {
   isDark: boolean;
@@ -50,7 +51,7 @@ export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
           </div>
         </div>
         <a href="/#proceso">Proceso</a>
-        <a href="/#aliado">Aliado</a>
+        <a href="/contacto">Contacto</a>
       </nav>
 
       <div className="site-header-actions">
@@ -66,7 +67,7 @@ export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
 
         <a
           className="site-nav-action"
-          href={`https://wa.me/?text=${whatsappMessage}`}
+          href={whatsappUrl}
           target="_blank"
           rel="noreferrer"
         >

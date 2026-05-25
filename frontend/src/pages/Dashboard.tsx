@@ -1,103 +1,92 @@
-import {
-  AlertTriangle,
-  ArrowRight,
-  Clock3,
-  PackageCheck,
-  ShoppingBag,
-  TrendingUp,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, ExternalLink, Mail, MessageCircle, PhoneCall, UserRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
 
-const stats = [
-  {
-    label: "Ventas hoy",
-    value: "$14,500",
-    change: "+18.2%",
-    tone: "is-positive",
-  },
-  {
-    label: "Pedidos activos",
-    value: "32",
-    change: "8 por surtir",
-    tone: "is-neutral",
-  },
-  {
-    label: "Inventario bajo",
-    value: "8",
-    change: "2 urgentes",
-    tone: "is-critical",
-  },
-];
+interface DashboardStat {
+  label: string;
+  value: string;
+  change: string;
+  tone: string;
+}
 
-const activity = [
-  {
-    title: "Pedido #1048 confirmado",
-    detail: "Sucursal Centro - hace 8 min",
-    icon: ShoppingBag,
-  },
-  {
-    title: "Reabastecimiento en ruta",
-    detail: "Lote de empaques - hace 22 min",
-    icon: PackageCheck,
-  },
-  {
-    title: "Pico de ventas detectado",
-    detail: "Categoria bebidas - hace 45 min",
-    icon: TrendingUp,
-  },
-];
+interface ContactRequest {
+  id: string;
+  name: string;
+  company?: string;
+  email: string;
+  phone?: string;
+  service?: string;
+  message: string;
+  emailStatus?: string;
+  createdAt: string;
+}
 
-const priorities = [
-  "Repon inventario de productos con cobertura menor a 2 dias.",
-  "Confirma los 8 pedidos con promesa de entrega antes de las 16:00.",
-  "Revisa la sucursal Norte: cayo 12% frente al promedio semanal.",
-];
+interface DashboardSummary {
+  stats: DashboardStat[];
+  recentRequests: ContactRequest[];
+  priorities: string[];
+}
+
+const fallbackSummary: DashboardSummary = {
+  stats: [
+    {
+      label: "Solicitudes hoy",
+      value: "0",
+      change: "sin nuevas",
+      tone: "is-neutral",
+    },
+    {
+      label: "Leads activos",
+      value: "0",
+      change: "por contactar",
+      tone: "is-neutral",
+    },
+    {
+      label: "Ultimos 7 dias",
+      value: "0",
+      change: "desde el sitio",
+      tone: "is-critical",
+    },
+  ],
+  recentRequests: [],
+  priorities: [
+    "Contactar solicitudes nuevas durante el mismo dia.",
+    "Clasificar cada lead por servicio.",
+    "Dar seguimiento a solicitudes sin respuesta.",
+  ],
+};
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
 
 export default function Dashboard() {
+  const [summary, setSummary] = useState<DashboardSummary>(fallbackSummary);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    api
+      .get<DashboardSummary>("/api/admin/summary")
+      .then((response) => {
+        if (isMounted) {
+          setSummary(response.data);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <div className="dashboard-shell">
-      <section className="hero-panel">
-        <div className="hero-grid">
-          <div className="hero-copy">
-            <p className="eyebrow is-light">Operacion del dia</p>
-            <h2>Visibilidad clara para decidir rapido y sin friccion.</h2>
-            <p>
-              Reorganice el dashboard para que las prioridades, metricas y
-              actividad reciente se entiendan de un vistazo.
-            </p>
-
-            <div className="hero-actions">
-              <button className="primary-button">
-                Ver pedidos criticos
-                <ArrowRight size={16} />
-              </button>
-              <button className="ghost-button">Descargar reporte</button>
-            </div>
-          </div>
-
-          <div className="hero-side">
-            <div className="hero-mini-card">
-              <div className="hero-mini-label">
-                <Clock3 size={18} />
-                <span>Siguiente revision</span>
-              </div>
-              <strong>15:30</strong>
-              <p>Corte operativo de entregas</p>
-            </div>
-
-            <div className="hero-mini-card">
-              <div className="hero-mini-label">
-                <AlertTriangle size={18} />
-                <span>Atencion inmediata</span>
-              </div>
-              <strong>2 alertas</strong>
-              <p>Productos con rotacion alta y stock critico</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="stats-grid">
-        {stats.map((stat) => (
+        {summary.stats.map((stat) => (
           <article key={stat.label} className="metric-card">
             <p>{stat.label}</p>
             <div className="metric-row">
@@ -112,28 +101,65 @@ export default function Dashboard() {
         <article className="surface-card">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Actividad reciente</p>
-              <h3>Movimiento de la operacion</h3>
+              <p className="eyebrow">Solicitudes recientes</p>
+              <h3>Bandeja de entrada</h3>
             </div>
-            <span className="live-badge">En vivo</span>
+            <span className="live-badge">API</span>
           </div>
 
           <div className="activity-list">
-            {activity.map((item) => {
-              const Icon = item.icon;
+            {summary.recentRequests.length === 0 && (
+              <div className="activity-item request-item">
+                <div className="activity-icon">
+                  <Mail size={18} />
+                </div>
+                <div>
+                  <p>Sin solicitudes todavia</p>
+                  <span>Cuando llegue un formulario aparecera aqui</span>
+                </div>
+              </div>
+            )}
 
-              return (
-                <div key={item.title} className="activity-item">
-                  <div className="activity-icon">
-                    <Icon size={18} />
+            {summary.recentRequests.map((request) => (
+              <div key={request.id} className="activity-item request-item">
+                <div className="activity-icon request-avatar">
+                  <UserRound size={18} />
+                </div>
+                <div className="request-content">
+                  <div className="request-title-row">
+                    <p>{request.name}</p>
+                    <span className={`request-status ${request.emailStatus === "sent" ? "is-sent" : ""}`}>
+                      {request.emailStatus === "sent" ? "correo enviado" : "pendiente"}
+                    </span>
                   </div>
-                  <div>
-                    <p>{item.title}</p>
-                    <span>{item.detail}</span>
+                  <span>
+                    {request.service || "Servicio por definir"} - {formatDate(request.createdAt)}
+                  </span>
+                  <small>{request.email}</small>
+                  <em>{request.message}</em>
+                  <div className="request-actions">
+                    {request.phone && (
+                      <a
+                        href={`https://wa.me/52${request.phone.replace(/\D/g, "")}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <PhoneCall size={15} />
+                        WhatsApp
+                      </a>
+                    )}
+                    <a href={`mailto:${request.email}`}>
+                      <Mail size={15} />
+                      Correo
+                    </a>
+                    <a href="/contacto">
+                      <ExternalLink size={15} />
+                      Formulario
+                    </a>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </article>
 
@@ -141,18 +167,43 @@ export default function Dashboard() {
           <div className="section-head is-stacked">
             <div>
               <p className="eyebrow">Prioridades</p>
-              <h3>Que atender ahora</h3>
+              <h3>Flujo de seguimiento</h3>
+            </div>
+          </div>
+
+          <div className="admin-pipeline">
+            <div>
+              <CheckCircle2 size={18} />
+              <span>Nuevo lead</span>
+            </div>
+            <div>
+              <MessageCircle size={18} />
+              <span>Contacto</span>
+            </div>
+            <div>
+              <ArrowRight size={18} />
+              <span>Propuesta</span>
             </div>
           </div>
 
           <div className="priority-list">
-            {priorities.map((item, index) => (
+            {summary.priorities.map((item, index) => (
               <div key={item} className="priority-item">
                 <span className="priority-index">0{index + 1}</span>
                 <p>{item}</p>
               </div>
             ))}
           </div>
+
+          <a
+            className="admin-whatsapp-link"
+            href="https://wa.me/525566042994"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <MessageCircle size={17} />
+            Contactar por WhatsApp
+          </a>
         </article>
       </section>
     </div>

@@ -1,18 +1,14 @@
-import {
-  CircleHelp,
-  DollarSign,
-  Home,
-  Package,
-  Settings2,
-  ShieldCheck,
-} from "lucide-react";
+import { ClipboardList, FileBarChart, Home, MessageCircle, Settings2, Sparkles, UsersRound } from "lucide-react";
+import { NavLink } from "react-router-dom";
 
 const menu = [
-  { name: "Dashboard", icon: Home, active: true },
-  { name: "Inventario", icon: Package },
-  { name: "Ventas", icon: DollarSign },
-  { name: "Seguridad", icon: ShieldCheck },
-  { name: "Ajustes", icon: Settings2 },
+  { name: "Resumen", icon: Home, path: "/admin" },
+  { name: "Solicitudes", icon: ClipboardList, path: "/admin/solicitudes" },
+  { name: "Clientes", icon: UsersRound, path: "/admin/clientes" },
+  { name: "Seguimiento", icon: MessageCircle, path: "/admin/seguimiento" },
+  { name: "Servicios", icon: Sparkles, path: "/admin/servicios" },
+  { name: "Reportes", icon: FileBarChart, path: "/admin/reportes" },
+  { name: "Ajustes", icon: Settings2, path: "/admin/ajustes" },
 ];
 
 interface Props {
@@ -23,12 +19,9 @@ export default function Sidebar({ collapsed }: Props) {
   return (
     <aside className={`sidebar-shell ${collapsed ? "is-collapsed" : ""}`}>
       <div className="sidebar-brand">
-        {!collapsed && (
-          <div className="sidebar-brand-copy">
-            <p className="eyebrow">Panel interno</p>
-            <h2>GiovSoft</h2>
-          </div>
-        )}
+        <span className="sidebar-brand-logo">
+          <img src={collapsed ? "/img/logo-icon.svg" : "/img/logo-black.svg"} alt="GiovSoft" />
+        </span>
       </div>
 
       <nav className="sidebar-nav">
@@ -36,29 +29,18 @@ export default function Sidebar({ collapsed }: Props) {
           const Icon = item.icon;
 
           return (
-            <button
+            <NavLink
               key={item.name}
-              className={`sidebar-link ${item.active ? "is-active" : ""}`}
-              aria-current={item.active ? "page" : undefined}
+              className={({ isActive }) => `sidebar-link ${isActive ? "is-active" : ""}`}
+              end={item.path === "/admin"}
+              to={item.path}
             >
               <Icon size={20} />
               {!collapsed && <span>{item.name}</span>}
-            </button>
+            </NavLink>
           );
         })}
       </nav>
-
-      <div className="sidebar-support">
-        <div className="sidebar-support-icon">
-          <CircleHelp size={18} />
-        </div>
-        {!collapsed && (
-          <div>
-            <p>Soporte operativo</p>
-            <span>Respuesta promedio de 5 min</span>
-          </div>
-        )}
-      </div>
     </aside>
   );
 }

@@ -1,38 +1,27 @@
 import {
   ArrowRight,
   BadgeCheck,
-  CheckCircle2,
+  Braces,
   Clock3,
+  Cloud,
   Code2,
+  Cpu,
   Globe2,
+  Layers3,
+  MessageCircle,
   Rocket,
   SearchCheck,
+  Server,
   ShieldCheck,
   Store,
   TrendingUp,
+  Wrench,
 } from "lucide-react";
 import SiteFooter from "../components/SiteFooter";
 import SiteHeader from "../components/SiteHeader";
 import heroImage from "../assets/hero.png";
 import { serviceItems } from "../data/services";
 import { useSiteTheme } from "../hooks/useSiteTheme";
-
-const stack = [
-  "Web responsive",
-  "Ecommerce",
-  "Dominios",
-  "Google Workspace",
-  "Correo corporativo",
-  "SEO inicial",
-  "Soporte",
-];
-
-const benefits = [
-  "Presencia digital profesional para negocios que quieren verse confiables.",
-  "Acompañamiento cercano para elegir lo que realmente necesita cada empresa.",
-  "Sitios preparados para celular, buscadores y futuras mejoras.",
-  "Soluciones que pueden crecer hacia tienda, agenda, catálogo o panel administrativo.",
-];
 
 const metrics = [
   {
@@ -57,23 +46,62 @@ const metrics = [
 
 const heroTags = ["Sitios web", "Tiendas en línea", "Google Workspace", "Dominios"];
 
-const processSteps = [
+const infrastructureStack = [
   {
-    number: "01",
-    title: "Diagnóstico",
-    copy: "Analizamos tu negocio, tus clientes y tus canales para identificar oportunidades clave.",
-    icon: SearchCheck,
+    name: "Python para IA",
+    copy: "Automatizaciones, procesamiento de datos y funciones inteligentes.",
+    icon: Cpu,
   },
   {
-    number: "02",
-    title: "Implementación",
-    copy: "Creamos y configuramos las soluciones digitales que tu negocio necesita para operar mejor.",
+    name: "React",
+    copy: "Interfaces modernas, rapidas y preparadas para crecer.",
+    icon: Layers3,
+  },
+  {
+    name: "Node.js",
+    copy: "Backend, APIs e integraciones para conectar servicios.",
+    icon: Server,
+  },
+  {
+    name: "Google Cloud",
+    copy: "Infraestructura, despliegues y servicios cloud escalables.",
+    icon: Cloud,
+  },
+  {
+    name: "HTML",
+    copy: "Estructura clara, semantica y compatible para la web.",
     icon: Code2,
   },
   {
+    name: "CSS",
+    copy: "Diseno responsive, animaciones y experiencia visual cuidada.",
+    icon: Braces,
+  },
+];
+
+const processSteps = [
+  {
+    number: "01",
+    title: "Primer contacto",
+    copy: "Escuchamos que necesita tu negocio, en que etapa esta y que objetivo quieres lograr.",
+    icon: MessageCircle,
+  },
+  {
+    number: "02",
+    title: "Diagnostico",
+    copy: "Revisamos tu presencia actual, canales, dominio, correos y oportunidades digitales.",
+    icon: SearchCheck,
+  },
+  {
     number: "03",
-    title: "Crecimiento",
-    copy: "Optimizamos, medimos y evolucionamos tus canales digitales para que sigas creciendo.",
+    title: "Implementacion",
+    copy: "Construimos y conectamos sitio, tienda, dominio, correos o Workspace segun el plan.",
+    icon: Wrench,
+  },
+  {
+    number: "04",
+    title: "Lanzamiento y mejora",
+    copy: "Publicamos, acompanamos el arranque y dejamos una ruta para seguir creciendo.",
     icon: TrendingUp,
   },
 ];
@@ -88,7 +116,7 @@ export default function Website() {
       <main>
         <section id="inicio" className="site-hero">
           <div className="site-hero-copy">
-            <p className="site-kicker">Aliado tecnológico para pequeñas empresas</p>
+            <p className="site-kicker">Tecnología para pequeñas empresas</p>
             <h1>Impulsa tu negocio con presencia digital profesional.</h1>
             <p>
               Creamos sitios web, tiendas en línea, dominios y correos corporativos
@@ -183,20 +211,22 @@ export default function Website() {
 
         <section id="proceso" className="site-band">
           <div className="site-band-copy">
-            <p className="site-kicker">Nuestro Proceso</p>
-            <h2>Convertimos necesidades en soluciones.</h2>
+            <p className="site-kicker">Proceso con un nuevo cliente</p>
+            <h2>Del primer mensaje a una base digital funcionando.</h2>
             <p>
-              Acompañamos a tu negocio en cada etapa
-              para construir soluciones digitales que
-              generen impacto real.
+              Acompanamos a cada nuevo cliente con un flujo claro:
+              entendemos el negocio, definimos prioridades, implementamos
+              y dejamos una base lista para operar.
             </p>
             <div className="process-proof">
               <span>01</span>
-              <strong>Entendemos tu negocio</strong>
+              <strong>Nos cuentas tu necesidad</strong>
               <span>02</span>
-              <strong>Ponemos en marcha la solución</strong>
+              <strong>Proponemos una ruta clara</strong>
               <span>03</span>
-              <strong>Impulsamos tu crecimiento</strong>
+              <strong>Construimos y conectamos</strong>
+              <span>04</span>
+              <strong>Lanzamos y acompanamos</strong>
             </div>
           </div>
 
@@ -221,29 +251,43 @@ export default function Website() {
           </div>
         </section>
 
-        <section id="aliado" className="site-section tech-section">
+        <section className="site-section infrastructure-section">
           <div className="section-intro">
-            <p className="site-kicker">Aliado tecnológico</p>
-            <h2>Impulsamos empresas pequeñas con herramientas claras.</h2>
+            <p className="site-kicker">Infraestructura y desarrollo</p>
+            <h2>Construimos con tecnologias modernas y una base preparada para crecer.</h2>
           </div>
 
-          <div className="tech-layout">
-            <div className="tech-panel">
-              {stack.map((item) => (
-                <span key={item}>{item}</span>
-              ))}
+          <div className="infrastructure-layout">
+            <div className="infrastructure-map" aria-hidden="true">
+              <div className="infra-core">
+                <Globe2 size={28} />
+                <strong>GiovSoft Stack</strong>
+                <span>web, cloud e IA</span>
+              </div>
+              <span className="infra-node node-python">Python IA</span>
+              <span className="infra-node node-react">React</span>
+              <span className="infra-node node-node">Node.js</span>
+              <span className="infra-node node-cloud">Google Cloud</span>
+              <span className="infra-node node-html">HTML</span>
+              <span className="infra-node node-css">CSS</span>
             </div>
 
-            <div className="benefit-list">
-              {benefits.map((benefit) => (
-                <div key={benefit}>
-                  <CheckCircle2 size={19} />
-                  <p>{benefit}</p>
-                </div>
-              ))}
+            <div className="infrastructure-grid">
+              {infrastructureStack.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <article key={item.name}>
+                    <Icon size={22} />
+                    <h3>{item.name}</h3>
+                    <p>{item.copy}</p>
+                  </article>
+                );
+              })}
             </div>
           </div>
         </section>
+
       </main>
 
       <SiteFooter isDark={isDark} />

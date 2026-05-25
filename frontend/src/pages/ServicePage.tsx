@@ -37,6 +37,7 @@ import { useSiteTheme } from "../hooks/useSiteTheme";
 const whatsappMessage = encodeURIComponent(
   "Hola GiovSoft, quiero información sobre sus servicios digitales."
 );
+const whatsappUrl = `https://wa.me/525566042994?text=${whatsappMessage}`;
 
 const websiteQuality = [
   {
@@ -73,15 +74,28 @@ const ecommerceHighlights = [
     icon: ShoppingBag,
   },
   {
-    title: "Pagos y contacto",
-    copy: "Preparamos la tienda para conectar medios de pago, WhatsApp o el flujo que tu negocio necesite.",
+    title: "Pagos integrados",
+    copy: "Conectamos pasarelas como Stripe, Mercado Pago u opciones compatibles con tu operacion.",
     icon: CreditCard,
   },
   {
+    title: "Envios conectados",
+    copy: "Preparamos integraciones con Skydrop, Envia.com u operadores logisticos segun el alcance.",
+    icon: Truck,
+  },
+  {
     title: "Operacion medible",
-    copy: "Base lista para revisar pedidos, productos y oportunidades de crecimiento con mas claridad.",
+    copy: "Base lista para revisar pedidos, pagos, envios y oportunidades de crecimiento con mas claridad.",
     icon: BarChart3,
   },
+];
+
+const ecommerceIntegrations = [
+  "Stripe",
+  "Mercado Pago",
+  "Skydrop",
+  "Envia.com",
+  "WhatsApp",
 ];
 
 const mailHighlights = [
@@ -214,7 +228,7 @@ export default function ServicePage() {
             <div className="service-detail-actions">
               <a
                 className="site-primary-button"
-                href={`https://wa.me/?text=${whatsappMessage}`}
+                href={whatsappUrl}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -364,6 +378,12 @@ export default function ServicePage() {
                   <Truck size={20} />
                   <span>Entrega</span>
                 </div>
+              </div>
+
+              <div className="commerce-integrations">
+                {ecommerceIntegrations.map((integration) => (
+                  <span key={integration}>{integration}</span>
+                ))}
               </div>
             </div>
 

@@ -8,7 +8,7 @@ const footerSections = [
       { label: "Inicio", href: "/" },
       { label: "Servicios", href: "/#servicios" },
       { label: "Proceso", href: "/#proceso" },
-      { label: "Aliado tecnológico", href: "/#aliado" },
+      { label: "Contacto", href: "/contacto" },
     ],
   },
   {
@@ -48,7 +48,7 @@ export default function SiteFooter({ isDark }: SiteFooterProps) {
             alt="GiovSoft"
           />
           <p>
-            Aliado tecnológico para pequeñas empresas que quieren vender,
+            Soluciones tecnológicas para pequeñas empresas que quieren vender,
             comunicarse y crecer con una base digital profesional.
           </p>
           <a className="footer-contact" href="mailto:contacto@giovsoft.com">
