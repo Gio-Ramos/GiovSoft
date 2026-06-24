@@ -2,6 +2,8 @@ import {
   BellRing,
   BriefcaseBusiness,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
   FileSignature,
   FolderCheck,
@@ -12,6 +14,7 @@ import {
   Plus,
   Save,
   Search,
+  X,
   UserRound,
 } from "lucide-react";
 import type { FormEvent } from "react";
@@ -89,6 +92,34 @@ const statusOptions = [
   { value: "inactive", label: "Inactivo" },
 ];
 
+const clientFormSteps = [
+  {
+    eyebrow: "Paso 1",
+    title: "Empresa",
+    description: "Datos principales para identificar al cliente dentro de la plataforma.",
+  },
+  {
+    eyebrow: "Paso 2",
+    title: "Contacto y servicio",
+    description: "Responsables, canal principal y servicio contratado o por implementar.",
+  },
+  {
+    eyebrow: "Paso 3",
+    title: "Infraestructura",
+    description: "Dominios, hosting y accesos operativos del cliente.",
+  },
+  {
+    eyebrow: "Paso 4",
+    title: "Pagos y documentos",
+    description: "Control administrativo, contratos, archivos digitales y recordatorios.",
+  },
+  {
+    eyebrow: "Paso 5",
+    title: "Revision",
+    description: "Resumen final antes de crear la ficha del cliente.",
+  },
+];
+
 function parseLines(value: string, keys: string[]) {
   return value
     .split("\n")
@@ -160,6 +191,9 @@ export default function AdminClients() {
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState<ClientForm>(emptyForm);
+  const [modalForm, setModalForm] = useState<ClientForm>(emptyForm);
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+  const [modalStep, setModalStep] = useState(0);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -200,6 +234,10 @@ export default function AdminClients() {
     setForm((currentForm) => ({ ...currentForm, [key]: value }));
   }
 
+  function updateModalForm<K extends keyof ClientForm>(key: K, value: ClientForm[K]) {
+    setModalForm((currentForm) => ({ ...currentForm, [key]: value }));
+  }
+
   function selectClient(client: ClientItem) {
     setSelectedId(client.id);
     setForm(clientToForm(client));
@@ -207,9 +245,17 @@ export default function AdminClients() {
   }
 
   function startNewClient() {
-    setSelectedId("");
-    setForm(emptyForm);
+    setModalForm(emptyForm);
+    setModalStep(0);
+    setIsClientModalOpen(true);
     setMessage("");
+  }
+
+  function closeClientModal(force = false) {
+    if (saving && !force) return;
+    setIsClientModalOpen(false);
+    setModalStep(0);
+    setModalForm(emptyForm);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -240,7 +286,35 @@ export default function AdminClients() {
     }
   }
 
+  async function handleModalSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (modalStep < clientFormSteps.length - 1) {
+      setModalStep((currentStep) => Math.min(currentStep + 1, clientFormSteps.length - 1));
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const payload = formToPayload(modalForm);
+      const response = await api.post<{ client: ClientItem }>("/api/admin/clients", payload);
+
+      setClients((currentClients) => [response.data.client, ...currentClients]);
+      setSelectedId(response.data.client.id);
+      setForm(clientToForm(response.data.client));
+      setMessage("Cliente creado.");
+      closeClientModal(true);
+    } catch {
+      setMessage("No se pudo guardar el cliente.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const primaryContact = getPrimaryContact(selectedClient);
+  const canMoveForward = modalStep !== 0 || Boolean(modalForm.businessName.trim());
 
   return (
     <div className="clients-crm-shell">
@@ -487,7 +561,231 @@ export default function AdminClients() {
           )}
         </article>
       </section>
+
+      {isClientModalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-modal="true" className="client-modal" role="dialog">
+            <header className="client-modal-head">
+              <div>
+                <p className="eyebrow">Nuevo cliente</p>
+                <h3>{clientFormSteps[modalStep].title}</h3>
+                <span>{clientFormSteps[modalStep].description}</span>
+              </div>
+              <button aria-label="Cerrar modal" className="icon-button" onClick={() => closeClientModal()} type="button">
+                <X size={19} />
+              </button>
+            </header>
+
+            <div className="client-stepper" aria-label="Etapas del formulario">
+              {clientFormSteps.map((step, index) => (
+                <button
+                  className={`client-step ${index === modalStep ? "is-current" : ""} ${index < modalStep ? "is-done" : ""}`}
+                  key={step.title}
+                  onClick={() => setModalStep(index)}
+                  type="button"
+                >
+                  <span>{index + 1}</span>
+                  <strong>{step.title}</strong>
+                </button>
+              ))}
+            </div>
+
+            <form className="client-modal-form" onSubmit={handleModalSubmit}>
+              <div className="client-step-panel">
+                <p className="eyebrow">{clientFormSteps[modalStep].eyebrow}</p>
+
+                {modalStep === 0 && (
+                  <>
+                    <div className="client-form-grid">
+                      <label>
+                        Nombre comercial
+                        <input
+                          autoFocus
+                          required
+                          value={modalForm.businessName}
+                          onChange={(event) => updateModalForm("businessName", event.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Razon social
+                        <input value={modalForm.legalName} onChange={(event) => updateModalForm("legalName", event.target.value)} />
+                      </label>
+                      <label>
+                        RFC
+                        <input value={modalForm.rfc} onChange={(event) => updateModalForm("rfc", event.target.value)} />
+                      </label>
+                      <label>
+                        Estado
+                        <select value={modalForm.status} onChange={(event) => updateModalForm("status", event.target.value)}>
+                          {statusOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Segmento
+                        <input value={modalForm.segment} onChange={(event) => updateModalForm("segment", event.target.value)} />
+                      </label>
+                      <label>
+                        Sitio web
+                        <input value={modalForm.website} onChange={(event) => updateModalForm("website", event.target.value)} />
+                      </label>
+                    </div>
+                    <label className="client-form-wide">
+                      Notas generales
+                      <textarea rows={3} value={modalForm.notes} onChange={(event) => updateModalForm("notes", event.target.value)} />
+                    </label>
+                  </>
+                )}
+
+                {modalStep === 1 && (
+                  <div className="client-tracking-grid">
+                    <label>
+                      Servicio principal
+                      <input
+                        value={modalForm.primaryService}
+                        onChange={(event) => updateModalForm("primaryService", event.target.value)}
+                      />
+                    </label>
+                    <TrackingTextarea
+                      help="Nombre | Rol | Email | Telefono"
+                      icon={UserRound}
+                      label="Contactos"
+                      value={modalForm.contacts}
+                      onChange={(value) => updateModalForm("contacts", value)}
+                    />
+                    <TrackingTextarea
+                      help="Servicio | Estado | Inicio | Renovacion"
+                      icon={BriefcaseBusiness}
+                      label="Servicios contratados"
+                      value={modalForm.services}
+                      onChange={(value) => updateModalForm("services", value)}
+                    />
+                  </div>
+                )}
+
+                {modalStep === 2 && (
+                  <div className="client-tracking-grid">
+                    <TrackingTextarea
+                      help="Dominio | Registrador | Vence | DNS"
+                      icon={Globe2}
+                      label="Dominios"
+                      value={modalForm.domains}
+                      onChange={(value) => updateModalForm("domains", value)}
+                    />
+                    <TrackingTextarea
+                      help="Proveedor | Plan | Vence | Acceso"
+                      icon={HardDrive}
+                      label="Hosting"
+                      value={modalForm.hosting}
+                      onChange={(value) => updateModalForm("hosting", value)}
+                    />
+                  </div>
+                )}
+
+                {modalStep === 3 && (
+                  <div className="client-tracking-grid">
+                    <TrackingTextarea
+                      help="Concepto | Monto | Vence | Estado"
+                      icon={CreditCard}
+                      label="Pagos"
+                      value={modalForm.payments}
+                      onChange={(value) => updateModalForm("payments", value)}
+                    />
+                    <TrackingTextarea
+                      help="Fecha | Asunto | Responsable"
+                      icon={BellRing}
+                      label="Recordatorios"
+                      value={modalForm.reminders}
+                      onChange={(value) => updateModalForm("reminders", value)}
+                    />
+                    <TrackingTextarea
+                      help="Contrato | Estado | Firma | URL"
+                      icon={FileSignature}
+                      label="Contratos firmados"
+                      value={modalForm.contracts}
+                      onChange={(value) => updateModalForm("contracts", value)}
+                    />
+                    <TrackingTextarea
+                      help="Documento | Tipo | Estado | URL"
+                      icon={FolderCheck}
+                      label="Documentos digitales"
+                      value={modalForm.documents}
+                      onChange={(value) => updateModalForm("documents", value)}
+                    />
+                  </div>
+                )}
+
+                {modalStep === 4 && (
+                  <div className="client-review-grid">
+                    <ReviewItem label="Empresa" value={modalForm.businessName || "Sin nombre"} />
+                    <ReviewItem label="Servicio" value={modalForm.primaryService || "Sin servicio principal"} />
+                    <ReviewItem label="Estado" value={getStatusLabel(modalForm.status)} />
+                    <ReviewItem label="Contactos" value={`${parseLines(modalForm.contacts, ["name"]).length} registros`} />
+                    <ReviewItem label="Dominios" value={`${parseLines(modalForm.domains, ["domain"]).length} registros`} />
+                    <ReviewItem label="Pagos" value={`${parseLines(modalForm.payments, ["concept"]).length} registros`} />
+                    <label className="client-form-wide">
+                      Nota inicial para historial
+                      <textarea
+                        rows={3}
+                        value={modalForm.activityNote}
+                        onChange={(event) => updateModalForm("activityNote", event.target.value)}
+                        placeholder="Ej. Cliente agregado desde reunion inicial."
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {message && (
+                <p className={`request-admin-message ${message.startsWith("No se") ? "is-error" : ""}`}>{message}</p>
+              )}
+
+              <footer className="client-modal-actions">
+                <button className="secondary-button" onClick={() => closeClientModal()} type="button">
+                  Cancelar
+                </button>
+                <div>
+                  <button
+                    className="secondary-button"
+                    disabled={modalStep === 0 || saving}
+                    onClick={() => setModalStep((currentStep) => Math.max(currentStep - 1, 0))}
+                    type="button"
+                  >
+                    <ChevronLeft size={16} />
+                    Atras
+                  </button>
+                  <button className="primary-button" disabled={!canMoveForward || saving} type="submit">
+                    {modalStep === clientFormSteps.length - 1 ? (
+                      <>
+                        <Save size={16} />
+                        {saving ? "Guardando" : "Crear cliente"}
+                      </>
+                    ) : (
+                      <>
+                        Siguiente
+                        <ChevronRight size={16} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ReviewItem({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="client-review-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
   );
 }
 

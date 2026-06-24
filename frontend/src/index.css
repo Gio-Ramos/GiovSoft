@@ -1489,6 +1489,180 @@ img {
   font-size: 0.86rem;
 }
 
+.modal-backdrop {
+  align-items: center;
+  background: rgba(7, 17, 31, 0.62);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1.25rem;
+  position: fixed;
+  z-index: 80;
+}
+
+.client-modal {
+  background: rgba(248, 252, 255, 0.98);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 1.25rem;
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.28);
+  color: var(--text-main);
+  display: grid;
+  gap: 1rem;
+  max-height: calc(100vh - 2.5rem);
+  max-width: 68rem;
+  overflow: hidden;
+  padding: 1.1rem;
+  width: min(100%, 68rem);
+}
+
+.client-modal-head {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.2rem 0.25rem 0;
+}
+
+.client-modal-head h3 {
+  font-size: clamp(1.45rem, 3vw, 2.1rem);
+  line-height: 1;
+  margin-top: 0.25rem;
+}
+
+.client-modal-head span {
+  color: var(--text-soft);
+  display: block;
+  margin-top: 0.45rem;
+}
+
+.client-stepper {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.client-step {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.9rem;
+  color: var(--text-soft);
+  display: flex;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.65rem;
+  text-align: left;
+}
+
+.client-step span {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 999px;
+  color: var(--text-main);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 900;
+  height: 1.65rem;
+  justify-content: center;
+  width: 1.65rem;
+}
+
+.client-step strong {
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-step.is-current {
+  background: rgba(15, 159, 117, 0.1);
+  border-color: rgba(15, 159, 117, 0.34);
+  color: var(--text-main);
+}
+
+.client-step.is-current span,
+.client-step.is-done span {
+  background: #047857;
+  color: #ffffff;
+}
+
+.client-modal-form {
+  display: grid;
+  gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.client-step-panel {
+  display: grid;
+  gap: 1rem;
+  max-height: min(55vh, 38rem);
+  overflow-y: auto;
+  padding: 0.2rem 0.2rem 0.35rem;
+}
+
+.client-modal-form label {
+  color: var(--text-main);
+  display: grid;
+  font-weight: 900;
+  gap: 0.45rem;
+}
+
+.client-modal-form input,
+.client-modal-form select,
+.client-modal-form textarea {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.85rem;
+  color: var(--text-main);
+  font: inherit;
+  padding: 0.82rem 0.9rem;
+  width: 100%;
+}
+
+.client-review-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.client-review-item {
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.9rem;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem;
+}
+
+.client-review-item span {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.client-review-item strong {
+  overflow-wrap: anywhere;
+}
+
+.client-modal-actions {
+  align-items: center;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding-top: 1rem;
+}
+
+.client-modal-actions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}
+
 .service-mini-stats {
   display: flex;
   flex-wrap: wrap;
@@ -4809,6 +4983,40 @@ img {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 1ms !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .modal-backdrop {
+    align-items: stretch;
+    padding: 0.75rem;
+  }
+
+  .client-modal {
+    max-height: calc(100vh - 1.5rem);
+    padding: 0.85rem;
+  }
+
+  .client-stepper {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .client-step {
+    padding: 0.55rem;
+  }
+
+  .client-step strong {
+    font-size: 0.76rem;
+  }
+
+  .client-modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .client-modal-actions > div,
+  .client-modal-actions button {
+    width: 100%;
   }
 }
 
