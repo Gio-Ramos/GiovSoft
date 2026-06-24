@@ -296,11 +296,54 @@ Incluyen:
 - **Express**: Servidor HTTP y rutas REST.
 - **CORS**: Acceso controlado desde frontend local o contenedorizado.
 - **Nodemailer**: Envio de autorespuesta al cliente y notificacion administrativa por correo.
-- **JSON local**: Persistencia inicial de solicitudes en `backend/data/contact-requests.json`.
+- **PostgreSQL / Cloud SQL**: Persistencia productiva para solicitudes, notas e historial.
+- **JSON local**: Fallback de desarrollo en `backend/data/contact-requests.json` cuando no hay variables de base de datos.
 
 ### Estado Actual
 
-El backend ya expone endpoints iniciales para formularios y panel administrativo. La persistencia es local en JSON, suficiente para desarrollo y pruebas. Para produccion debe migrarse a una base de datos.
+El backend ya expone endpoints iniciales para formularios y panel administrativo. En produccion puede usar PostgreSQL mediante Cloud SQL; en desarrollo conserva fallback JSON para levantar sin infraestructura adicional.
+
+### Base de Datos
+
+El diseño SQL vive en:
+
+```text
+database/schema.sql
+```
+
+Tablas principales:
+
+- `contact_requests`: solicitud comercial capturada desde el sitio.
+- `contact_request_notes`: notas internas de seguimiento por solicitud.
+- `contact_request_status_history`: historial de cambios de etapa y notas.
+
+Variables compatibles:
+
+```text
+DATABASE_URL
+DB_SSL=true
+```
+
+O por campos separados:
+
+```text
+PGHOST / DB_HOST
+PGPORT / DB_PORT
+PGDATABASE / DB_NAME
+PGUSER / DB_USER
+PGPASSWORD / DB_PASSWORD
+```
+
+Para Cloud SQL con Unix socket:
+
+```text
+CLOUD_SQL_CONNECTION_NAME=project:region:instance
+DB_NAME=giovsoft
+DB_USER=giovsoft_app
+DB_PASSWORD=...
+```
+
+Si ninguna variable de base de datos existe, el backend usa `JSON local`.
 
 ### Endpoints Implementados
 

@@ -6,6 +6,7 @@ const express = require("express");
 const fs = require("fs/promises");
 const nodemailer = require("nodemailer");
 const path = require("path");
+const { Pool } = require("pg");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -17,6 +18,20 @@ const requestsFile = path.join(dataDir, "contact-requests.json");
 const logoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-white.svg");
 const adminEmail = process.env.ADMIN_EMAIL || "contacto@giovsoft.com";
 const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+const cloudSqlHost = process.env.CLOUD_SQL_CONNECTION_NAME
+  ? `/cloudsql/${process.env.CLOUD_SQL_CONNECTION_NAME}`
+  : "";
+const postgresConfigured = Boolean(
+  process.env.DATABASE_URL ||
+    process.env.PGHOST ||
+    process.env.DB_HOST ||
+    cloudSqlHost ||
+    process.env.PGDATABASE ||
+    process.env.DB_NAME
+);
+const dataStore = postgresConfigured ? "PostgreSQL" : "JSON local";
+let pool;
+let databaseReady = false;
 
 const serviceDetails = {
   "GiovSoft 360": {
@@ -318,13 +333,275 @@ async function ensureDataFile() {
   }
 }
 
+function getPool() {
+  if (!postgresConfigured) {
+    return null;
+  }
+
+  if (!pool) {
+    if (process.env.DATABASE_URL) {
+      pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined,
+      });
+    } else {
+      pool = new Pool({
+        host: process.env.PGHOST || process.env.DB_HOST || cloudSqlHost,
+        port: Number(process.env.PGPORT || process.env.DB_PORT || 5432),
+        database: process.env.PGDATABASE || process.env.DB_NAME || "giovsoft",
+        user: process.env.PGUSER || process.env.DB_USER || "giovsoft_app",
+        password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
+      });
+    }
+  }
+
+  return pool;
+}
+
+async function ensureDatabase() {
+  const currentPool = getPool();
+
+  if (!currentPool || databaseReady) {
+    return;
+  }
+
+  await currentPool.query(`
+    CREATE TABLE IF NOT EXISTS contact_requests (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      company TEXT,
+      email TEXT NOT NULL,
+      phone TEXT,
+      service TEXT,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'new',
+      status_label TEXT NOT NULL DEFAULT 'Nueva',
+      email_status TEXT NOT NULL DEFAULT 'pending',
+      email_status_detail TEXT,
+      source TEXT NOT NULL DEFAULT 'website',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contact_requests_status
+      ON contact_requests (status);
+
+    CREATE INDEX IF NOT EXISTS idx_contact_requests_created_at
+      ON contact_requests (created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS contact_request_notes (
+      id UUID PRIMARY KEY,
+      request_id UUID NOT NULL REFERENCES contact_requests (id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL,
+      status_label TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contact_request_notes_request_id
+      ON contact_request_notes (request_id);
+
+    CREATE TABLE IF NOT EXISTS contact_request_status_history (
+      id UUID PRIMARY KEY,
+      request_id UUID NOT NULL REFERENCES contact_requests (id) ON DELETE CASCADE,
+      status TEXT NOT NULL,
+      label TEXT NOT NULL,
+      note TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contact_request_status_history_request_id
+      ON contact_request_status_history (request_id);
+  `);
+
+  databaseReady = true;
+}
+
+function toIsoDate(value) {
+  return value ? new Date(value).toISOString() : "";
+}
+
+function mapRequestRow(row, notes = [], statusHistory = []) {
+  return {
+    id: row.id,
+    name: row.name,
+    company: row.company || "",
+    email: row.email,
+    phone: row.phone || "",
+    service: row.service || "",
+    message: row.message,
+    status: row.status,
+    statusLabel: row.status_label,
+    emailStatus: row.email_status,
+    emailStatusDetail: row.email_status_detail || "",
+    source: row.source,
+    notes,
+    statusHistory,
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
 async function readRequests() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+
+    const { rows } = await currentPool.query("SELECT * FROM contact_requests ORDER BY created_at DESC");
+    const ids = rows.map((row) => row.id);
+
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const [notesResult, historyResult] = await Promise.all([
+      currentPool.query(
+        "SELECT * FROM contact_request_notes WHERE request_id = ANY($1::uuid[]) ORDER BY created_at DESC",
+        [ids]
+      ),
+      currentPool.query(
+        "SELECT * FROM contact_request_status_history WHERE request_id = ANY($1::uuid[]) ORDER BY created_at DESC",
+        [ids]
+      ),
+    ]);
+
+    const notesByRequest = new Map();
+    for (const note of notesResult.rows) {
+      const currentNotes = notesByRequest.get(note.request_id) || [];
+      currentNotes.push({
+        id: note.id,
+        body: note.body,
+        status: note.status,
+        statusLabel: note.status_label,
+        createdAt: toIsoDate(note.created_at),
+      });
+      notesByRequest.set(note.request_id, currentNotes);
+    }
+
+    const historyByRequest = new Map();
+    for (const item of historyResult.rows) {
+      const currentHistory = historyByRequest.get(item.request_id) || [];
+      currentHistory.push({
+        status: item.status,
+        label: item.label,
+        note: item.note,
+        createdAt: toIsoDate(item.created_at),
+      });
+      historyByRequest.set(item.request_id, currentHistory);
+    }
+
+    return rows.map((row) => {
+      return mapRequestRow(row, notesByRequest.get(row.id) || [], historyByRequest.get(row.id) || []);
+    });
+  }
+
   await ensureDataFile();
   const raw = await fs.readFile(requestsFile, "utf8");
   return JSON.parse(raw);
 }
 
 async function writeRequests(requests) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+
+    const client = await currentPool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      for (const request of requests) {
+        await client.query(
+          `
+            INSERT INTO contact_requests (
+              id, name, company, email, phone, service, message, status, status_label,
+              email_status, email_status_detail, source, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              company = EXCLUDED.company,
+              email = EXCLUDED.email,
+              phone = EXCLUDED.phone,
+              service = EXCLUDED.service,
+              message = EXCLUDED.message,
+              status = EXCLUDED.status,
+              status_label = EXCLUDED.status_label,
+              email_status = EXCLUDED.email_status,
+              email_status_detail = EXCLUDED.email_status_detail,
+              source = EXCLUDED.source,
+              created_at = EXCLUDED.created_at,
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            request.id,
+            request.name,
+            request.company || null,
+            request.email,
+            request.phone || null,
+            request.service || null,
+            request.message,
+            request.status || "new",
+            request.statusLabel || requestStatuses[request.status] || requestStatuses.new,
+            request.emailStatus || "pending",
+            request.emailStatusDetail || null,
+            request.source || "website",
+            request.createdAt || new Date().toISOString(),
+            request.updatedAt || request.createdAt || new Date().toISOString(),
+          ]
+        );
+
+        await client.query("DELETE FROM contact_request_notes WHERE request_id = $1", [request.id]);
+        await client.query("DELETE FROM contact_request_status_history WHERE request_id = $1", [request.id]);
+
+        for (const note of Array.isArray(request.notes) ? request.notes : []) {
+          await client.query(
+            `
+              INSERT INTO contact_request_notes (id, request_id, body, status, status_label, created_at)
+              VALUES ($1, $2, $3, $4, $5, $6)
+            `,
+            [
+              note.id || crypto.randomUUID(),
+              request.id,
+              note.body,
+              note.status || request.status || "new",
+              note.statusLabel || requestStatuses[note.status] || requestStatuses.new,
+              note.createdAt || new Date().toISOString(),
+            ]
+          );
+        }
+
+        for (const item of Array.isArray(request.statusHistory) ? request.statusHistory : []) {
+          await client.query(
+            `
+              INSERT INTO contact_request_status_history (id, request_id, status, label, note, created_at)
+              VALUES ($1, $2, $3, $4, $5, $6)
+            `,
+            [
+              crypto.randomUUID(),
+              request.id,
+              item.status || request.status || "new",
+              item.label || requestStatuses[item.status] || requestStatuses.new,
+              item.note || "",
+              item.createdAt || new Date().toISOString(),
+            ]
+          );
+        }
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return;
+  }
+
   await ensureDataFile();
   await fs.writeFile(requestsFile, JSON.stringify(requests, null, 2), "utf8");
 }
@@ -426,7 +703,7 @@ app.get("/api/admin/settings", (_req, res) => {
     smtpConfigured,
     smtpUser: process.env.SMTP_USER || "",
     frontendOrigins: allowedOrigins,
-    dataStore: "JSON local",
+    dataStore,
   });
 });
 
