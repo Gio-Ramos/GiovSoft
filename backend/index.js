@@ -15,6 +15,7 @@ const allowedOrigins = (process.env.FRONTEND_ORIGIN || "http://localhost:5173,ht
   .map((origin) => origin.trim());
 const dataDir = path.join(__dirname, "data");
 const requestsFile = path.join(dataDir, "contact-requests.json");
+const clientsFile = path.join(dataDir, "clients.json");
 const logoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-white.svg");
 const adminEmail = process.env.ADMIN_EMAIL || "contacto@giovsoft.com";
 const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -412,6 +413,35 @@ async function ensureDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_contact_request_status_history_request_id
       ON contact_request_status_history (request_id);
+
+    CREATE TABLE IF NOT EXISTS clients (
+      id UUID PRIMARY KEY,
+      business_name TEXT NOT NULL,
+      legal_name TEXT,
+      rfc TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      segment TEXT,
+      website TEXT,
+      primary_service TEXT,
+      notes TEXT,
+      contacts JSONB NOT NULL DEFAULT '[]'::jsonb,
+      services JSONB NOT NULL DEFAULT '[]'::jsonb,
+      domains JSONB NOT NULL DEFAULT '[]'::jsonb,
+      hosting JSONB NOT NULL DEFAULT '[]'::jsonb,
+      payments JSONB NOT NULL DEFAULT '[]'::jsonb,
+      reminders JSONB NOT NULL DEFAULT '[]'::jsonb,
+      contracts JSONB NOT NULL DEFAULT '[]'::jsonb,
+      documents JSONB NOT NULL DEFAULT '[]'::jsonb,
+      activity JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_clients_status
+      ON clients (status);
+
+    CREATE INDEX IF NOT EXISTS idx_clients_business_name
+      ON clients (business_name);
   `);
 
   databaseReady = true;
@@ -437,6 +467,35 @@ function mapRequestRow(row, notes = [], statusHistory = []) {
     source: row.source,
     notes,
     statusHistory,
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function mapClientRow(row) {
+  return {
+    id: row.id,
+    businessName: row.business_name,
+    legalName: row.legal_name || "",
+    rfc: row.rfc || "",
+    status: row.status,
+    segment: row.segment || "",
+    website: row.website || "",
+    primaryService: row.primary_service || "",
+    notes: row.notes || "",
+    contacts: safeArray(row.contacts),
+    services: safeArray(row.services),
+    domains: safeArray(row.domains),
+    hosting: safeArray(row.hosting),
+    payments: safeArray(row.payments),
+    reminders: safeArray(row.reminders),
+    contracts: safeArray(row.contracts),
+    documents: safeArray(row.documents),
+    activity: safeArray(row.activity),
     createdAt: toIsoDate(row.created_at),
     updatedAt: toIsoDate(row.updated_at),
   };
@@ -499,6 +558,115 @@ async function readRequests() {
   await ensureDataFile();
   const raw = await fs.readFile(requestsFile, "utf8");
   return JSON.parse(raw);
+}
+
+async function ensureClientsFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(clientsFile);
+  } catch {
+    await fs.writeFile(clientsFile, "[]", "utf8");
+  }
+}
+
+async function readClients() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const { rows } = await currentPool.query("SELECT * FROM clients ORDER BY updated_at DESC");
+    return rows.map(mapClientRow);
+  }
+
+  await ensureClientsFile();
+  const raw = await fs.readFile(clientsFile, "utf8");
+  return JSON.parse(raw);
+}
+
+async function writeClients(clients) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+
+    const client = await currentPool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      for (const item of clients) {
+        await client.query(
+          `
+            INSERT INTO clients (
+              id, business_name, legal_name, rfc, status, segment, website, primary_service, notes,
+              contacts, services, domains, hosting, payments, reminders, contracts, documents, activity,
+              created_at, updated_at
+            )
+            VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9,
+              $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb,
+              $19, $20
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              business_name = EXCLUDED.business_name,
+              legal_name = EXCLUDED.legal_name,
+              rfc = EXCLUDED.rfc,
+              status = EXCLUDED.status,
+              segment = EXCLUDED.segment,
+              website = EXCLUDED.website,
+              primary_service = EXCLUDED.primary_service,
+              notes = EXCLUDED.notes,
+              contacts = EXCLUDED.contacts,
+              services = EXCLUDED.services,
+              domains = EXCLUDED.domains,
+              hosting = EXCLUDED.hosting,
+              payments = EXCLUDED.payments,
+              reminders = EXCLUDED.reminders,
+              contracts = EXCLUDED.contracts,
+              documents = EXCLUDED.documents,
+              activity = EXCLUDED.activity,
+              created_at = EXCLUDED.created_at,
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            item.id,
+            item.businessName,
+            item.legalName || null,
+            item.rfc || null,
+            item.status || "active",
+            item.segment || null,
+            item.website || null,
+            item.primaryService || null,
+            item.notes || null,
+            JSON.stringify(safeArray(item.contacts)),
+            JSON.stringify(safeArray(item.services)),
+            JSON.stringify(safeArray(item.domains)),
+            JSON.stringify(safeArray(item.hosting)),
+            JSON.stringify(safeArray(item.payments)),
+            JSON.stringify(safeArray(item.reminders)),
+            JSON.stringify(safeArray(item.contracts)),
+            JSON.stringify(safeArray(item.documents)),
+            JSON.stringify(safeArray(item.activity)),
+            item.createdAt || new Date().toISOString(),
+            item.updatedAt || new Date().toISOString(),
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return;
+  }
+
+  await ensureClientsFile();
+  await fs.writeFile(clientsFile, JSON.stringify(clients, null, 2), "utf8");
 }
 
 async function writeRequests(requests) {
@@ -636,6 +804,48 @@ function validateContactRequest(body) {
   return { payload };
 }
 
+function sanitizeCollection(value) {
+  return safeArray(value).map((item) => {
+    return Object.fromEntries(
+      Object.entries(item || {}).map(([key, entryValue]) => [key, typeof entryValue === "string" ? sanitizeText(entryValue) : entryValue])
+    );
+  });
+}
+
+function validateClientPayload(body, existingClient) {
+  const now = new Date().toISOString();
+  const payload = {
+    businessName: sanitizeText(body.businessName || body.company || existingClient?.businessName),
+    legalName: sanitizeText(body.legalName || existingClient?.legalName),
+    rfc: sanitizeText(body.rfc || existingClient?.rfc),
+    status: sanitizeText(body.status || existingClient?.status || "active"),
+    segment: sanitizeText(body.segment || existingClient?.segment),
+    website: sanitizeText(body.website || existingClient?.website),
+    primaryService: sanitizeText(body.primaryService || existingClient?.primaryService),
+    notes: sanitizeText(body.notes || existingClient?.notes),
+    contacts: body.contacts !== undefined ? sanitizeCollection(body.contacts) : safeArray(existingClient?.contacts),
+    services: body.services !== undefined ? sanitizeCollection(body.services) : safeArray(existingClient?.services),
+    domains: body.domains !== undefined ? sanitizeCollection(body.domains) : safeArray(existingClient?.domains),
+    hosting: body.hosting !== undefined ? sanitizeCollection(body.hosting) : safeArray(existingClient?.hosting),
+    payments: body.payments !== undefined ? sanitizeCollection(body.payments) : safeArray(existingClient?.payments),
+    reminders: body.reminders !== undefined ? sanitizeCollection(body.reminders) : safeArray(existingClient?.reminders),
+    contracts: body.contracts !== undefined ? sanitizeCollection(body.contracts) : safeArray(existingClient?.contracts),
+    documents: body.documents !== undefined ? sanitizeCollection(body.documents) : safeArray(existingClient?.documents),
+  };
+
+  if (!payload.businessName) {
+    return { error: "El nombre comercial del cliente es requerido." };
+  }
+
+  return {
+    payload: {
+      ...payload,
+      activity: body.activity !== undefined ? sanitizeCollection(body.activity) : safeArray(existingClient?.activity),
+      updatedAt: now,
+    },
+  };
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "giovsoft-api" });
 });
@@ -705,6 +915,89 @@ app.get("/api/admin/settings", (_req, res) => {
     frontendOrigins: allowedOrigins,
     dataStore,
   });
+});
+
+app.get("/api/admin/clients", async (_req, res, next) => {
+  try {
+    const clients = await readClients();
+    res.json({ clients });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/clients", async (req, res, next) => {
+  try {
+    const validation = validateClientPayload(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const clients = await readClients();
+    const now = new Date().toISOString();
+    const newClient = {
+      id: crypto.randomUUID(),
+      ...validation.payload,
+      activity: [
+        {
+          id: crypto.randomUUID(),
+          type: "Alta",
+          detail: "Cliente creado manualmente en plataforma.",
+          createdAt: now,
+        },
+        ...safeArray(validation.payload.activity),
+      ],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    clients.unshift(newClient);
+    await writeClients(clients);
+
+    res.status(201).json({ message: "Cliente creado.", client: newClient });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/admin/clients/:id", async (req, res, next) => {
+  try {
+    const clients = await readClients();
+    const clientIndex = clients.findIndex((client) => client.id === req.params.id);
+
+    if (clientIndex === -1) {
+      return res.status(404).json({ message: "Cliente no encontrado." });
+    }
+
+    const currentClient = clients[clientIndex];
+    const validation = validateClientPayload(req.body, currentClient);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const updatedClient = {
+      ...currentClient,
+      ...validation.payload,
+      activity: [
+        {
+          id: crypto.randomUUID(),
+          type: "Actualizacion",
+          detail: sanitizeText(req.body.activityNote) || "Ficha de cliente actualizada.",
+          createdAt: validation.payload.updatedAt,
+        },
+        ...safeArray(validation.payload.activity),
+      ],
+    };
+
+    clients[clientIndex] = updatedClient;
+    await writeClients(clients);
+
+    res.json({ message: "Cliente actualizado.", client: updatedClient });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.patch("/api/admin/contact-requests/:id", async (req, res, next) => {

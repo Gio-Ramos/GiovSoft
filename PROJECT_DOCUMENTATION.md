@@ -316,6 +316,7 @@ Tablas principales:
 - `contact_requests`: solicitud comercial capturada desde el sitio.
 - `contact_request_notes`: notas internas de seguimiento por solicitud.
 - `contact_request_status_history`: historial de cambios de etapa y notas.
+- `clients`: ficha operativa de cliente con contactos, servicios contratados, dominios, hosting, pagos, recordatorios, contratos, documentos digitales y actividad.
 
 Variables compatibles:
 
@@ -352,7 +353,26 @@ GET  /api/health
 POST /api/contact-requests
 GET  /api/admin/contact-requests
 GET  /api/admin/summary
+GET  /api/admin/clients
+POST /api/admin/clients
+PATCH /api/admin/clients/:id
 ```
+
+### Modulo de Clientes
+
+El modulo `/admin/clientes` funciona como CRM operativo para crear clientes manualmente y llevar rastreo de:
+
+- Contactos principales y roles.
+- Servicios contratados, estado, fecha de inicio y renovacion.
+- Dominios, registrador, vencimiento y estado DNS.
+- Hosting, proveedor, plan, vencimiento y acceso.
+- Pagos, monto, fecha limite y estado.
+- Recordatorios con fecha, asunto y responsable.
+- Contratos firmados y URL de respaldo.
+- Documentos digitales, tipo, estado y URL.
+- Actividad historica de la ficha.
+
+Las colecciones se almacenan en PostgreSQL como `JSONB` para permitir una captura flexible mientras el modelo comercial se estabiliza. Cuando el flujo madure, estas colecciones pueden normalizarse en tablas independientes sin cambiar la experiencia del usuario.
 
 ### Formulario de Contacto
 

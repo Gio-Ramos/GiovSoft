@@ -44,3 +44,32 @@ CREATE TABLE IF NOT EXISTS contact_request_status_history (
 
 CREATE INDEX IF NOT EXISTS idx_contact_request_status_history_request_id
   ON contact_request_status_history (request_id);
+
+CREATE TABLE IF NOT EXISTS clients (
+  id UUID PRIMARY KEY,
+  business_name TEXT NOT NULL,
+  legal_name TEXT,
+  rfc TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  segment TEXT,
+  website TEXT,
+  primary_service TEXT,
+  notes TEXT,
+  contacts JSONB NOT NULL DEFAULT '[]'::jsonb,
+  services JSONB NOT NULL DEFAULT '[]'::jsonb,
+  domains JSONB NOT NULL DEFAULT '[]'::jsonb,
+  hosting JSONB NOT NULL DEFAULT '[]'::jsonb,
+  payments JSONB NOT NULL DEFAULT '[]'::jsonb,
+  reminders JSONB NOT NULL DEFAULT '[]'::jsonb,
+  contracts JSONB NOT NULL DEFAULT '[]'::jsonb,
+  documents JSONB NOT NULL DEFAULT '[]'::jsonb,
+  activity JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clients_status
+  ON clients (status);
+
+CREATE INDEX IF NOT EXISTS idx_clients_business_name
+  ON clients (business_name);
