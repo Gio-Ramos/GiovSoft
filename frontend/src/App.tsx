@@ -11,11 +11,14 @@ import Dashboard from "./pages/Dashboard";
 import ServicePage from "./pages/ServicePage";
 import Website from "./pages/Website";
 
+const isAdminHost =
+  typeof window !== "undefined" && window.location.hostname === "admin.giovsoft.com";
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Website />} />
+        <Route path="/" element={isAdminHost ? <Navigate to="/admin" replace /> : <Website />} />
         <Route path="/contacto" element={<ContactPage />} />
         <Route path="/servicios/:slug" element={<ServicePage />} />
         <Route
