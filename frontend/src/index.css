@@ -1372,6 +1372,34 @@ img {
   color: #047857;
 }
 
+.client-empty-file {
+  align-items: center;
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+  min-height: 24rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.client-empty-file .request-row-avatar {
+  height: 3.25rem;
+  width: 3.25rem;
+}
+
+.client-empty-file h3 {
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+  line-height: 1;
+  margin-top: 0.35rem;
+}
+
+.client-empty-file span:not(.request-row-avatar) {
+  color: var(--text-soft);
+  display: block;
+  margin: 0.65rem auto 0;
+  max-width: 38rem;
+}
+
 .client-form {
   display: grid;
   gap: 1rem;

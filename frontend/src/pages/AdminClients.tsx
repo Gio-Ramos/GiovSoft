@@ -397,16 +397,17 @@ export default function AdminClients() {
         </aside>
 
         <article className="client-file surface-card">
-          <div className="client-file-head">
-            <div>
-              <p className="eyebrow">{selectedClient ? "Ficha activa" : "Nueva ficha"}</p>
-              <h3>{form.businessName || "Cliente sin nombre"}</h3>
-              <span>{form.primaryService || "Define el servicio principal"}</span>
-            </div>
-            <span className={`request-stage is-${form.status}`}>{getStatusLabel(form.status)}</span>
-          </div>
+          {selectedClient ? (
+            <>
+              <div className="client-file-head">
+                <div>
+                  <p className="eyebrow">Ficha activa</p>
+                  <h3>{form.businessName || "Cliente sin nombre"}</h3>
+                  <span>{form.primaryService || "Define el servicio principal"}</span>
+                </div>
+                <span className={`request-stage is-${form.status}`}>{getStatusLabel(form.status)}</span>
+              </div>
 
-          {selectedClient && (
             <div className="client-quick-actions">
               {primaryContact?.email && (
                 <a href={`mailto:${primaryContact.email}`}>
@@ -427,7 +428,6 @@ export default function AdminClients() {
                 </a>
               )}
             </div>
-          )}
 
           <form className="client-form" onSubmit={handleSubmit}>
             <div className="client-form-grid">
@@ -547,17 +547,32 @@ export default function AdminClients() {
 
             <button className="primary-button request-save-button" disabled={saving} type="submit">
               <Save size={16} />
-              {saving ? "Guardando" : selectedClient ? "Guardar ficha" : "Crear cliente"}
+              {saving ? "Guardando" : "Guardar ficha"}
             </button>
           </form>
 
-          {selectedClient && (
             <section className="client-summary-panel">
               <ClientSection icon={CalendarClock} items={selectedClient.activity} label="Actividad" keys={["type", "detail", "createdAt"]} />
               <ClientSection icon={CreditCard} items={selectedClient.payments} label="Pagos" keys={["concept", "amount", "dueDate", "status"]} />
               <ClientSection icon={Globe2} items={selectedClient.domains} label="Dominios" keys={["domain", "registrar", "expiresAt", "dnsStatus"]} />
               <ClientSection icon={FolderCheck} items={selectedClient.documents} label="Documentos" keys={["name", "type", "status", "url"]} />
             </section>
+            </>
+          ) : (
+            <div className="client-empty-file">
+              <span className="request-row-avatar">
+                <BriefcaseBusiness size={22} />
+              </span>
+              <div>
+                <p className="eyebrow">Sin cliente seleccionado</p>
+                <h3>Crea una ficha desde el modal</h3>
+                <span>El alta de cliente ahora se captura por etapas para registrar empresa, servicios, dominios, pagos y documentos sin saturar la pantalla.</span>
+              </div>
+              <button className="primary-button clients-new-button" onClick={startNewClient} type="button">
+                <Plus size={17} />
+                Nuevo cliente
+              </button>
+            </div>
           )}
         </article>
       </section>
