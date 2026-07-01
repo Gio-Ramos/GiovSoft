@@ -941,6 +941,8 @@
 
 .users-table-wrap {
   overflow-x: auto;
+  padding-bottom: 0.7rem;
+  scrollbar-gutter: stable;
 }
 
 .users-data-table {
@@ -1113,9 +1115,9 @@
   min-width: 13rem;
   overflow: hidden;
   position: absolute;
+  bottom: calc(50% + 1.45rem);
   right: 1.25rem;
-  top: calc(50% + 1.45rem);
-  z-index: 12;
+  z-index: 40;
 }
 
 .users-action-menu.is-open {
@@ -3876,6 +3878,8 @@ html:has(.app-shell) {
 .clients-table-wrap {
   overflow-x: auto;
   overflow-y: hidden;
+  padding-bottom: 0.7rem;
+  scrollbar-gutter: stable;
 }
 
 .clients-data-table {
@@ -4057,9 +4061,9 @@ html:has(.app-shell) {
   min-width: 9rem;
   overflow: hidden;
   position: absolute;
+  bottom: calc(50% + 1.45rem);
   right: 1.25rem;
-  top: calc(50% + 1.45rem);
-  z-index: 12;
+  z-index: 40;
 }
 
 .clients-action-menu.is-open {
@@ -5652,6 +5656,58 @@ html:has(.app-shell) {
   font-weight: 900;
   min-height: 1.8rem;
   padding: 0 0.75rem;
+}
+
+.clients-data-table th:last-child,
+.clients-data-table td:last-child,
+.companies-data-table th:last-child,
+.companies-data-table td:last-child,
+.users-data-table th:last-child,
+.users-data-table td:last-child,
+.projects-data-table th:last-child,
+.projects-data-table td:last-child,
+.billing-data-table th:last-child,
+.billing-data-table td:last-child,
+.roles-list-table th:last-child,
+.roles-list-table td:last-child,
+.services-plans-table th:last-child,
+.services-plans-table td:last-child {
+  background: inherit;
+  box-shadow: -12px 0 18px rgba(248, 250, 253, 0.86);
+  min-width: 6.5rem;
+  position: sticky;
+  right: 0;
+  text-align: center;
+  z-index: 8;
+}
+
+.clients-data-table th:last-child,
+.companies-data-table th:last-child,
+.users-data-table th:last-child,
+.projects-data-table th:last-child,
+.billing-data-table th:last-child,
+.roles-list-table th:last-child,
+.services-plans-table th:last-child {
+  background: #f8fafd;
+  z-index: 9;
+}
+
+.clients-data-table td:last-child,
+.companies-data-table td:last-child,
+.users-data-table td:last-child,
+.projects-data-table td:last-child,
+.billing-data-table td:last-child,
+.roles-list-table td:last-child,
+.services-plans-table td:last-child {
+  background: #ffffff;
+}
+
+.audit-data-table th:last-child,
+.audit-data-table td:last-child {
+  box-shadow: none;
+  min-width: unset;
+  position: static;
+  text-align: left;
 }
 
 .billing-status.is-paid,
