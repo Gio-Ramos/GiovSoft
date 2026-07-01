@@ -22,13 +22,13 @@ import {
   UsersRound,
   UserX,
 } from "lucide-react";
-import { getAdminToken, readAdminUser, type AdminUser } from "../lib/adminSession";
+import { readAdminUser, type AdminUser } from "../lib/adminSession";
+import { api } from "../lib/api";
 
 const temporaryPassword = "123456";
 
 const roleOptions = ["Administrador", "Gerente", "Editor", "Analista", "Soporte", "Invitado"];
 const companyOptions = ["GiovSoft Technologies", "Cliente Externo"];
-const demoUsers: AdminUser[] = [];
 
 const initialUserForm = {
   firstName: "",
@@ -71,6 +71,11 @@ function userHandle(user: AdminUser) {
   return usernameFromEmail(user.email) || user.name.toLowerCase().replace(/\s+/g, ".");
 }
 
+function apiErrorMessage(error: unknown, fallback: string) {
+  const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+  return responseMessage || fallback;
+}
+
 function lastAccessLabel(value?: string) {
   if (!value) {
     return "Sin acceso";
@@ -96,14 +101,9 @@ function lastAccessLabel(value?: string) {
   return date.toLocaleDateString("es-MX");
 }
 
-function isDemoUser(user: AdminUser) {
-  return user.id.startsWith("demo-");
-}
-
 export default function AdminUsers() {
   const currentUser = readAdminUser();
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [demoUserState, setDemoUserState] = useState(demoUsers);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("Todos");
   const [statusFilter, setStatusFilter] = useState("Todos");
@@ -118,29 +118,15 @@ export default function AdminUsers() {
   const [form, setForm] = useState(initialUserForm);
 
   useEffect(() => {
-    const token = getAdminToken();
-    if (!token) {
-      return;
-    }
-
-    fetch("/api/admin/users", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("No se pudieron cargar los usuarios.");
-        }
-        return response.json();
-      })
-      .then((data: { users: AdminUser[] }) => setUsers(data.users))
-      .catch((requestError: Error) => setError(requestError.message));
+    api
+      .get<{ users: AdminUser[] }>("/api/admin/users")
+      .then((response) => setUsers(response.data.users))
+      .catch(() => setError("No se pudieron cargar los usuarios."));
   }, []);
 
   const sourceUsers = useMemo(() => {
-    const realEmails = new Set(users.map((user) => user.email));
-    const fallbackUsers = demoUserState.filter((user) => !realEmails.has(user.email));
-    return [...users, ...fallbackUsers].slice(0, Math.max(8, users.length));
-  }, [demoUserState, users]);
+    return users;
+  }, [users]);
 
   const filteredUsers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -193,7 +179,6 @@ export default function AdminUsers() {
     setError("");
     setMessage("");
 
-    const token = getAdminToken();
     const name = `${form.firstName} ${form.lastName}`.trim();
 
     if (!name || !form.email || !form.username || !form.role || !form.company) {
@@ -209,81 +194,43 @@ export default function AdminUsers() {
     }
 
     try {
-      if (!token) {
-        throw new Error("No hay sesión administrativa activa.");
-      }
-
-      const response = await fetch("/api/admin/users", {
-        body: JSON.stringify({ name, email: form.email, role: form.role }),
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        method: "POST",
+      const response = await api.post<{ user: AdminUser; temporaryPassword?: string }>("/api/admin/users", {
+        email: form.email,
+        name,
+        role: form.role,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "No se pudo crear el usuario.");
-      }
-
-      let createdUser = data.user as AdminUser;
+      let createdUser = response.data.user;
 
       if (form.status !== "active") {
-        const statusResponse = await fetch(`/api/admin/users/${createdUser.id}`, {
-          body: JSON.stringify({ name: createdUser.name, role: createdUser.role, status: form.status }),
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          method: "PATCH",
+        const statusResponse = await api.patch<{ user: AdminUser }>(`/api/admin/users/${createdUser.id}`, {
+          name: createdUser.name,
+          role: createdUser.role,
+          status: form.status,
         });
-        const statusData = await statusResponse.json();
-
-        if (!statusResponse.ok) {
-          throw new Error(statusData.message || "El usuario se creó, pero no se pudo actualizar su estado.");
-        }
-
-        createdUser = statusData.user;
+        createdUser = statusResponse.data.user;
       }
 
       setUsers((current) => [createdUser, ...current.filter((user) => user.id !== createdUser.id)]);
-      setMessage(`Usuario creado. Contraseña temporal: ${data.temporaryPassword || temporaryPassword}.`);
+      setMessage(`Usuario creado. Contraseña temporal: ${response.data.temporaryPassword || temporaryPassword}.`);
       closeCreateForm();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "No se pudo crear el usuario.");
+    } catch (requestError: unknown) {
+      setError(apiErrorMessage(requestError, "No se pudo crear el usuario."));
     } finally {
       setSaving(false);
     }
   }
 
   async function resetPassword(user: AdminUser) {
-    if (isDemoUser(user)) {
-      setMessage(`Contraseña restablecida para ${user.name}. Temporal: ${temporaryPassword}.`);
-      setOpenMenu("");
-      return;
-    }
-
-    const token = getAdminToken();
     setError("");
     setMessage("");
 
     try {
-      const response = await fetch(`/api/admin/users/${user.id}/reset-password`, {
-        headers: { Authorization: `Bearer ${token}` },
-        method: "POST",
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "No se pudo restablecer la contraseña.");
-      }
-
-      setUsers((current) => current.map((item) => (item.id === user.id ? data.user : item)));
-      setMessage(`Contraseña restablecida. Temporal: ${data.temporaryPassword || temporaryPassword}.`);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "No se pudo restablecer la contraseña.");
+      const response = await api.post<{ user: AdminUser; temporaryPassword?: string }>(`/api/admin/users/${user.id}/reset-password`);
+      setUsers((current) => current.map((item) => (item.id === user.id ? response.data.user : item)));
+      setMessage(`Contraseña restablecida. Temporal: ${response.data.temporaryPassword || temporaryPassword}.`);
+    } catch (requestError: unknown) {
+      setError(apiErrorMessage(requestError, "No se pudo restablecer la contraseña."));
     } finally {
       setOpenMenu("");
     }
@@ -294,36 +241,17 @@ export default function AdminUsers() {
     setError("");
     setMessage("");
 
-    if (isDemoUser(user)) {
-      setDemoUserState((current) =>
-        current.map((item) => (item.id === user.id ? { ...item, status: nextStatus } : item)),
-      );
-      setMessage(`${user.name} ahora está ${nextStatus === "active" ? "activo" : "inactivo"}.`);
-      setOpenMenu("");
-      return;
-    }
-
-    const token = getAdminToken();
-
     try {
-      const response = await fetch(`/api/admin/users/${user.id}`, {
-        body: JSON.stringify({ name: user.name, role: user.role, status: nextStatus }),
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        method: "PATCH",
+      const response = await api.patch<{ user: AdminUser }>(`/api/admin/users/${user.id}`, {
+        name: user.name,
+        role: user.role,
+        status: nextStatus,
       });
-      const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || "No se pudo actualizar el usuario.");
-      }
-
-      setUsers((current) => current.map((item) => (item.id === user.id ? data.user : item)));
+      setUsers((current) => current.map((item) => (item.id === user.id ? response.data.user : item)));
       setMessage(`${user.name} ahora está ${nextStatus === "active" ? "activo" : "inactivo"}.`);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "No se pudo actualizar el usuario.");
+    } catch (requestError: unknown) {
+      setError(apiErrorMessage(requestError, "No se pudo actualizar el usuario."));
     } finally {
       setOpenMenu("");
     }
