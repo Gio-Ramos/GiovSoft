@@ -30,6 +30,7 @@ const temporaryAdminPassword = "123456";
 const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || "giovsoft-local-admin-secret";
 const adminTokenTtlMs = Number(process.env.ADMIN_TOKEN_TTL_HOURS || 12) * 60 * 60 * 1000;
 const adminTwoFactorEnabled = process.env.ADMIN_2FA_ENABLED !== "false";
+const masterTwoFactorEnabled = process.env.MASTER_ADMIN_2FA_ENABLED === "true";
 const twoFactorCodeTtlMs = Number(process.env.ADMIN_2FA_CODE_TTL_MINUTES || 10) * 60 * 1000;
 const twoFactorMaxAttempts = Number(process.env.ADMIN_2FA_MAX_ATTEMPTS || 5);
 const genericPublicRfc = "XAXX010101000";
@@ -1241,7 +1242,9 @@ app.post("/api/admin/login", async (req, res, next) => {
       return res.status(401).json({ message: "Correo o contraseña incorrectos." });
     }
 
-    if (adminTwoFactorEnabled) {
+    const requiresTwoFactor = adminTwoFactorEnabled && (!user.isMaster || masterTwoFactorEnabled);
+
+    if (requiresTwoFactor) {
       const { challengeId, code, expiresAt } = createTwoFactorChallenge(user);
       const emailResult = await sendTwoFactorEmail(user, code, expiresAt);
 
