@@ -15,6 +15,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 type ProjectStatus = "planning" | "in_progress" | "review" | "completed" | "paused";
 type DeliverableStatus = "pending" | "in_progress" | "review" | "done";
@@ -163,6 +164,8 @@ export default function AdminProjects() {
   const [attachmentName, setAttachmentName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   const projectsWithProgress = useMemo(
     () => projects.map((project) => ({ ...project, status: statusFromProgress(project), progress: calculateProgress(project) })),

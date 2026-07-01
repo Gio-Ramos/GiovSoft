@@ -869,7 +869,7 @@
 }
 
 .users-table-card {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .users-table-toolbar {
@@ -1117,7 +1117,7 @@
   position: absolute;
   bottom: calc(50% + 1.45rem);
   right: 1.25rem;
-  z-index: 40;
+  z-index: 999;
 }
 
 .users-action-menu.is-open {
@@ -3790,7 +3790,7 @@ html:has(.app-shell) {
   border: 1px solid #e7edf7;
   border-radius: 1rem;
   box-shadow: 0 12px 40px rgba(16, 32, 56, 0.05);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .clients-table-toolbar {
@@ -4063,7 +4063,7 @@ html:has(.app-shell) {
   position: absolute;
   bottom: calc(50% + 1.45rem);
   right: 1.25rem;
-  z-index: 40;
+  z-index: 999;
 }
 
 .clients-action-menu.is-open {
@@ -4136,7 +4136,7 @@ html:has(.app-shell) {
   border: 1px solid #e7edf7;
   border-radius: 1rem;
   box-shadow: 0 12px 40px rgba(16, 32, 56, 0.05);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .companies-table-toolbar {
@@ -4217,7 +4217,7 @@ html:has(.app-shell) {
   border: 1px solid #e7edf7;
   border-radius: 1rem;
   box-shadow: 0 12px 40px rgba(16, 32, 56, 0.05);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .roles-table-toolbar {
@@ -5587,7 +5587,7 @@ html:has(.app-shell) {
   border: 1px solid #e7edf7;
   border-radius: 1rem;
   box-shadow: 0 12px 40px rgba(16, 32, 56, 0.05);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .billing-tabs {
@@ -5700,6 +5700,16 @@ html:has(.app-shell) {
 .roles-list-table td:last-child,
 .services-plans-table td:last-child {
   background: #ffffff;
+}
+
+.clients-data-table td:last-child:has(.clients-action-menu.is-open),
+.companies-data-table td:last-child:has(.clients-action-menu.is-open),
+.users-data-table td:last-child:has(.users-action-menu.is-open),
+.projects-data-table td:last-child:has(.clients-action-menu.is-open),
+.billing-data-table td:last-child:has(.clients-action-menu.is-open),
+.roles-list-table td:last-child:has(.clients-action-menu.is-open),
+.services-plans-table td:last-child:has(.clients-action-menu.is-open) {
+  z-index: 200;
 }
 
 .audit-data-table th:last-child,

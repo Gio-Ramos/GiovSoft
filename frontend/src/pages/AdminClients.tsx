@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 import { api } from "../lib/api";
 
 interface ClientItem {
@@ -249,6 +250,8 @@ export default function AdminClients() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+
+  useCloseOnOutsideClick(Boolean(actionClientId), () => setActionClientId(""));
 
   useEffect(() => {
     api

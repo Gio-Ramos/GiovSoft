@@ -20,6 +20,7 @@ import {
   FolderKanban,
   FileBarChart,
 } from "lucide-react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 type PermissionAction = "view" | "create" | "edit" | "delete";
 
@@ -195,6 +196,8 @@ export default function AdminRoles() {
   const [editingId, setEditingId] = useState("");
   const [form, setForm] = useState<RoleForm>(emptyForm);
   const [message, setMessage] = useState("");
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   useEffect(() => {
     window.localStorage.setItem(storageKey, JSON.stringify(roles));

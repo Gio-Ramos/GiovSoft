@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { readAdminUser, type AdminUser } from "../lib/adminSession";
 import { api } from "../lib/api";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 const temporaryPassword = "123456";
 
@@ -116,6 +117,8 @@ export default function AdminUsers() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(initialUserForm);
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   useEffect(() => {
     api

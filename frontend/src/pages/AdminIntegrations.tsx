@@ -1,5 +1,6 @@
 import { CheckCircle2, MoreVertical, Plug, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 type IntegrationStatus = "connected" | "pending" | "error" | "disabled";
 
@@ -30,6 +31,8 @@ export default function AdminIntegrations() {
   const errors = integrations.filter((item) => item.status === "error").length;
 
   const categories = useMemo(() => [...new Set(integrations.map((item) => item.category))], [integrations]);
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   function updateIntegration(integration: IntegrationItem, status: IntegrationStatus) {
     setIntegrations((current) => current.map((item) => (item.id === integration.id ? { ...item, status, lastSync: status === "connected" ? "Ahora" : item.lastSync } : item)));

@@ -1,5 +1,6 @@
 import { CalendarClock, CreditCard, Download, FileText, Filter, MoreVertical, Plus, Search, Send, WalletCards } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
 type BillingTab = "invoices" | "recurring" | "collections";
@@ -86,6 +87,8 @@ export default function AdminBilling() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [openMenu, setOpenMenu] = useState("");
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   const filteredInvoices = useMemo(() => {
     const normalized = query.trim().toLowerCase();

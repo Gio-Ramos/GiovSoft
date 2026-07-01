@@ -19,6 +19,7 @@ import {
   UserCheck,
   UsersRound,
 } from "lucide-react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 interface CompanyItem {
   id: string;
@@ -149,6 +150,8 @@ export default function AdminCompanies() {
   const [editingId, setEditingId] = useState("");
   const [form, setForm] = useState<CompanyForm>(emptyForm);
   const [message, setMessage] = useState("");
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   useEffect(() => {
     window.localStorage.setItem(storageKey, JSON.stringify(companies));

@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Clock3, Download, Filter, MessageCircle, MoreVertical, Plus, Search, UserRoundCheck } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 type TicketStatus = "open" | "in_progress" | "waiting" | "resolved" | "closed";
 type TicketPriority = "low" | "medium" | "high" | "urgent";
@@ -44,6 +45,8 @@ export default function AdminTickets() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [openMenu, setOpenMenu] = useState("");
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   const filteredTickets = useMemo(() => {
     const normalized = query.trim().toLowerCase();

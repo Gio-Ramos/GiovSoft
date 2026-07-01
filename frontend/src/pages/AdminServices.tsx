@@ -17,6 +17,7 @@ import {
   Sparkles,
   ToggleLeft,
 } from "lucide-react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 type PriceMode = "fixed" | "variable";
 type BillingCycle = "Único" | "Mensual" | "Anual" | "Variable";
@@ -109,6 +110,8 @@ export default function AdminServices() {
   const [editingPlanId, setEditingPlanId] = useState("");
   const [planForm, setPlanForm] = useState<PlanForm>(emptyPlanForm);
   const [message, setMessage] = useState("");
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   useEffect(() => {
     window.localStorage.setItem(storageKey, JSON.stringify(services));

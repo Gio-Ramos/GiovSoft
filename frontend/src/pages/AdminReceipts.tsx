@@ -1,6 +1,7 @@
 import type { ChangeEvent } from "react";
 import { CheckCircle2, Download, FileArchive, FileCheck2, FileUp, Filter, MoreVertical, Plus, Search, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
 type ReceiptStatus = "valid" | "pending" | "rejected" | "archived";
 
@@ -38,6 +39,8 @@ export default function AdminReceipts() {
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [openMenu, setOpenMenu] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
   const filteredReceipts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
