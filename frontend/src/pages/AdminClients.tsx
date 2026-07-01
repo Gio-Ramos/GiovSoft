@@ -129,8 +129,6 @@ const clientFormSteps = [
   },
 ];
 
-const demoClients: ClientItem[] = [];
-
 function parseLines(value: string, keys: string[]) {
   return value
     .split("\n")
@@ -235,7 +233,6 @@ function getPlanLabel(client: ClientItem) {
 
 export default function AdminClients() {
   const [clients, setClients] = useState<ClientItem[]>([]);
-  const [demoClientState, setDemoClientState] = useState<ClientItem[]>(demoClients);
   const [modalForm, setModalForm] = useState<ClientForm>(emptyForm);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState("");
@@ -268,10 +265,9 @@ export default function AdminClients() {
   }, [pageSize, planFilter, query, statusFilter, typeFilter]);
 
   const filteredClients = useMemo(() => {
-    const sourceClients = clients.length > 0 ? clients : demoClientState;
     const normalizedQuery = query.trim().toLowerCase();
 
-    return sourceClients.filter((client) => {
+    return clients.filter((client) => {
       const matchesQuery = !normalizedQuery || [client.businessName, client.legalName, client.rfc, client.primaryService, client.segment]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedQuery));
@@ -282,21 +278,20 @@ export default function AdminClients() {
 
       return matchesQuery && matchesStatus && matchesType && matchesPlan;
     });
-  }, [clients, demoClientState, planFilter, query, statusFilter, typeFilter]);
+  }, [clients, planFilter, query, statusFilter, typeFilter]);
 
-  const totalClientCount = clients.length > 0 ? clients.length : 1248;
-  const totalPages = Math.max(1, Math.ceil((clients.length > 0 ? filteredClients.length : totalClientCount) / pageSize));
+  const totalClientCount = clients.length;
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
   const normalizedPage = Math.min(currentPage, totalPages);
-  const paginatedClients =
-    clients.length > 0 ? filteredClients.slice((normalizedPage - 1) * pageSize, normalizedPage * pageSize) : filteredClients.slice(0, pageSize);
+  const paginatedClients = filteredClients.slice((normalizedPage - 1) * pageSize, normalizedPage * pageSize);
 
-  const activeClients = clients.length > 0 ? clients.filter((client) => client.status !== "inactive").length : 1058;
-  const inactiveClients = clients.length > 0 ? clients.filter((client) => client.status === "inactive").length : 190;
-  const newThisMonth = clients.length > 0 ? clients.filter((client) => {
+  const activeClients = clients.filter((client) => client.status !== "inactive").length;
+  const inactiveClients = clients.filter((client) => client.status === "inactive").length;
+  const newThisMonth = clients.filter((client) => {
     const createdAt = new Date(client.createdAt);
     const now = new Date();
     return createdAt.getMonth() === now.getMonth() && createdAt.getFullYear() === now.getFullYear();
-  }).length : 86;
+  }).length;
   function updateModalForm<K extends keyof ClientForm>(key: K, value: ClientForm[K]) {
     setModalForm((currentForm) => ({ ...currentForm, [key]: value }));
   }
@@ -351,15 +346,6 @@ export default function AdminClients() {
     setSaving(true);
     setMessage("");
 
-    if (client.id.startsWith("demo-")) {
-      setDemoClientState((currentClients) =>
-        currentClients.map((item) => (item.id === client.id ? { ...item, status: "inactive", updatedAt: new Date().toISOString() } : item))
-      );
-      setSaving(false);
-      setMessage("Cliente inhabilitado.");
-      return;
-    }
-
     try {
       const payload = formToPayload({ ...clientToForm(client), status: "inactive" });
       const response = await api.patch<{ client: ClientItem }>(`/api/admin/clients/${client.id}`, payload);
@@ -404,32 +390,6 @@ export default function AdminClients() {
 
     try {
       const payload = formToPayload(withFiscalDocument(modalForm, taxRegime, cfdiUse));
-
-      if (editingClientId.startsWith("demo-")) {
-        const now = new Date().toISOString();
-        setDemoClientState((currentClients) =>
-          currentClients.map((client) =>
-            client.id === editingClientId
-              ? {
-                  ...client,
-                  ...payload,
-                  contacts: payload.contacts,
-                  services: payload.services,
-                  domains: payload.domains,
-                  hosting: payload.hosting,
-                  payments: payload.payments,
-                  reminders: payload.reminders,
-                  contracts: payload.contracts,
-                  documents: payload.documents,
-                  updatedAt: now,
-                }
-              : client
-          )
-        );
-        setMessage("Cliente actualizado.");
-        closeClientModal(true);
-        return;
-      }
 
       const response = editingClientId
         ? await api.patch<{ client: ClientItem }>(`/api/admin/clients/${editingClientId}`, payload)
@@ -748,7 +708,7 @@ export default function AdminClients() {
           <div>
             <p>Clientes totales</p>
             <h3>{totalClientCount}</h3>
-            <small className="is-positive">↑ 12.5% vs. mes anterior</small>
+            <small>Desde base de datos</small>
           </div>
         </article>
         <article className="clients-stat-card">
@@ -758,7 +718,7 @@ export default function AdminClients() {
           <div>
             <p>Clientes activos</p>
             <h3>{activeClients}</h3>
-            <small className="is-positive">↑ 8.3% vs. mes anterior</small>
+            <small>Registros habilitados</small>
           </div>
         </article>
         <article className="clients-stat-card">
@@ -768,7 +728,7 @@ export default function AdminClients() {
           <div>
             <p>Nuevos este mes</p>
             <h3>{newThisMonth}</h3>
-            <small className="is-positive">↑ 15.2% vs. mes anterior</small>
+            <small>Altas del mes actual</small>
           </div>
         </article>
         <article className="clients-stat-card">
@@ -778,7 +738,7 @@ export default function AdminClients() {
           <div>
             <p>Inactivos</p>
             <h3>{inactiveClients}</h3>
-            <small className="is-negative">↓ 4.7% vs. mes anterior</small>
+            <small>Registros inhabilitados</small>
           </div>
         </article>
       </section>

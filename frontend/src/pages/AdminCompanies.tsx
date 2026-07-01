@@ -465,19 +465,19 @@ export default function AdminCompanies() {
       <div className="clients-stats-grid">
         <article className="clients-stat-card">
           <span className="clients-stat-icon is-blue"><Building2 size={27} /></span>
-          <div><p>Empresas totales</p><h3>{companies.length}</h3><small className="is-positive">↑ 12.5% vs. mes anterior</small></div>
+          <div><p>Empresas totales</p><h3>{companies.length}</h3><small>Desde base local</small></div>
         </article>
         <article className="clients-stat-card">
           <span className="clients-stat-icon is-green"><ShieldCheck size={27} /></span>
-          <div><p>Empresas activas</p><h3>{activeCompanies}</h3><small className="is-positive">↑ 8.3% vs. mes anterior</small></div>
+          <div><p>Empresas activas</p><h3>{activeCompanies}</h3><small>Registros habilitados</small></div>
         </article>
         <article className="clients-stat-card">
           <span className="clients-stat-icon is-purple"><Store size={27} /></span>
-          <div><p>Planes Business</p><h3>{enterprisePlans}</h3><small className="is-neutral">↑ 0% vs. mes anterior</small></div>
+          <div><p>Planes Business</p><h3>{enterprisePlans}</h3><small>Empresas con ese plan</small></div>
         </article>
         <article className="clients-stat-card">
           <span className="clients-stat-icon is-orange"><UsersRound size={27} /></span>
-          <div><p>Inactivas</p><h3>{inactiveCompanies}</h3><small className="is-negative">↓ 4.7% vs. mes anterior</small></div>
+          <div><p>Inactivas</p><h3>{inactiveCompanies}</h3><small>Registros inhabilitados</small></div>
         </article>
       </div>
 

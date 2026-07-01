@@ -558,19 +558,19 @@ export default function AdminUsers() {
       <div className="users-stats-grid">
         <article className="users-stat-card">
           <span className="users-stat-icon is-blue"><UsersRound size={27} /></span>
-          <div><p>Usuarios totales</p><h3>{sourceUsers.length}</h3><small className="is-positive">↑ 12.5% vs. mes anterior</small></div>
+          <div><p>Usuarios totales</p><h3>{sourceUsers.length}</h3><small>Desde base de datos</small></div>
         </article>
         <article className="users-stat-card">
           <span className="users-stat-icon is-green"><ShieldCheck size={27} /></span>
-          <div><p>Usuarios activos</p><h3>{activeUsers}</h3><small className="is-positive">↑ 8.3% vs. mes anterior</small></div>
+          <div><p>Usuarios activos</p><h3>{activeUsers}</h3><small>Cuentas habilitadas</small></div>
         </article>
         <article className="users-stat-card">
           <span className="users-stat-icon is-purple"><UserCheck size={27} /></span>
-          <div><p>Administradores</p><h3>{adminUsers}</h3><small className="is-neutral">↑ 0% vs. mes anterior</small></div>
+          <div><p>Administradores</p><h3>{adminUsers}</h3><small>Rol administrador</small></div>
         </article>
         <article className="users-stat-card">
           <span className="users-stat-icon is-orange"><UserX size={27} /></span>
-          <div><p>Inactivos</p><h3>{inactiveUsers}</h3><small className="is-negative">↓ 4.7% vs. mes anterior</small></div>
+          <div><p>Inactivos</p><h3>{inactiveUsers}</h3><small>Cuentas deshabilitadas</small></div>
         </article>
       </div>
 
