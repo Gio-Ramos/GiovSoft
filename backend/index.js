@@ -692,11 +692,14 @@ async function ensureDatabase() {
       business_name TEXT NOT NULL,
       legal_name TEXT,
       rfc TEXT,
+      tax_regime TEXT,
+      cfdi_use TEXT,
       status TEXT NOT NULL DEFAULT 'active',
       segment TEXT,
       website TEXT,
       primary_service TEXT,
       notes TEXT,
+      fiscal_address JSONB NOT NULL DEFAULT '{}'::jsonb,
       contacts JSONB NOT NULL DEFAULT '[]'::jsonb,
       services JSONB NOT NULL DEFAULT '[]'::jsonb,
       domains JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -715,6 +718,10 @@ async function ensureDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_clients_business_name
       ON clients (business_name);
+
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS tax_regime TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS cfdi_use TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS fiscal_address JSONB NOT NULL DEFAULT '{}'::jsonb;
 
     CREATE TABLE IF NOT EXISTS admin_users (
       id UUID PRIMARY KEY,
@@ -1065,11 +1072,14 @@ function mapClientRow(row) {
     businessName: row.business_name,
     legalName: row.legal_name || "",
     rfc: row.rfc || "",
+    taxRegime: row.tax_regime || "",
+    cfdiUse: row.cfdi_use || "",
     status: row.status,
     segment: row.segment || "",
     website: row.website || "",
     primaryService: row.primary_service || "",
     notes: row.notes || "",
+    fiscalAddress: row.fiscal_address || {},
     contacts: safeArray(row.contacts),
     services: safeArray(row.services),
     domains: safeArray(row.domains),
@@ -1383,24 +1393,27 @@ async function writeClients(clients) {
         await client.query(
           `
             INSERT INTO clients (
-              id, business_name, legal_name, rfc, status, segment, website, primary_service, notes,
-              contacts, services, domains, hosting, payments, reminders, contracts, documents, activity,
+              id, business_name, legal_name, rfc, tax_regime, cfdi_use, status, segment, website, primary_service, notes,
+              fiscal_address, contacts, services, domains, hosting, payments, reminders, contracts, documents, activity,
               created_at, updated_at
             )
             VALUES (
-              $1, $2, $3, $4, $5, $6, $7, $8, $9,
-              $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb,
-              $19, $20
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+              $12::jsonb, $13::jsonb, $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb, $20::jsonb, $21::jsonb,
+              $22, $23
             )
             ON CONFLICT (id) DO UPDATE SET
               business_name = EXCLUDED.business_name,
               legal_name = EXCLUDED.legal_name,
               rfc = EXCLUDED.rfc,
+              tax_regime = EXCLUDED.tax_regime,
+              cfdi_use = EXCLUDED.cfdi_use,
               status = EXCLUDED.status,
               segment = EXCLUDED.segment,
               website = EXCLUDED.website,
               primary_service = EXCLUDED.primary_service,
               notes = EXCLUDED.notes,
+              fiscal_address = EXCLUDED.fiscal_address,
               contacts = EXCLUDED.contacts,
               services = EXCLUDED.services,
               domains = EXCLUDED.domains,
@@ -1418,11 +1431,14 @@ async function writeClients(clients) {
             item.businessName,
             item.legalName || null,
             item.rfc || null,
+            item.taxRegime || null,
+            item.cfdiUse || null,
             item.status || "active",
             item.segment || null,
             item.website || null,
             item.primaryService || null,
             item.notes || null,
+            JSON.stringify(sanitizePlainObject(item.fiscalAddress)),
             JSON.stringify(safeArray(item.contacts)),
             JSON.stringify(safeArray(item.services)),
             JSON.stringify(safeArray(item.domains)),
@@ -1596,17 +1612,33 @@ function sanitizeCollection(value) {
   });
 }
 
+function sanitizePlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entryValue]) => [
+      key,
+      typeof entryValue === "string" ? sanitizeText(entryValue) : entryValue ?? "",
+    ])
+  );
+}
+
 function validateClientPayload(body, existingClient) {
   const now = new Date().toISOString();
   const payload = {
     businessName: sanitizeText(body.businessName || body.company || existingClient?.businessName),
     legalName: sanitizeText(body.legalName || existingClient?.legalName),
     rfc: sanitizeText(body.rfc || existingClient?.rfc || genericPublicRfc),
+    taxRegime: sanitizeText(body.taxRegime || existingClient?.taxRegime),
+    cfdiUse: sanitizeText(body.cfdiUse || existingClient?.cfdiUse),
     status: sanitizeText(body.status || existingClient?.status || "active"),
     segment: sanitizeText(body.segment || existingClient?.segment),
     website: sanitizeText(body.website || existingClient?.website),
     primaryService: sanitizeText(body.primaryService || existingClient?.primaryService),
     notes: sanitizeText(body.notes || existingClient?.notes),
+    fiscalAddress: body.fiscalAddress !== undefined ? sanitizePlainObject(body.fiscalAddress) : sanitizePlainObject(existingClient?.fiscalAddress),
     contacts: body.contacts !== undefined ? sanitizeCollection(body.contacts) : safeArray(existingClient?.contacts),
     services: body.services !== undefined ? sanitizeCollection(body.services) : safeArray(existingClient?.services),
     domains: body.domains !== undefined ? sanitizeCollection(body.domains) : safeArray(existingClient?.domains),

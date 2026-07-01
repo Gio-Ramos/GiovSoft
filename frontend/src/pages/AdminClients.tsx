@@ -32,11 +32,14 @@ interface ClientItem {
   businessName: string;
   legalName?: string;
   rfc?: string;
+  taxRegime?: string;
+  cfdiUse?: string;
   status: string;
   segment?: string;
   website?: string;
   primaryService?: string;
   notes?: string;
+  fiscalAddress?: Record<string, string>;
   contacts: Record<string, string>[];
   services: Record<string, string>[];
   domains: Record<string, string>[];
@@ -54,11 +57,22 @@ interface ClientForm {
   businessName: string;
   legalName: string;
   rfc: string;
+  taxRegime: string;
+  cfdiUse: string;
   status: string;
   segment: string;
   website: string;
   primaryService: string;
   notes: string;
+  fiscalCountry: string;
+  fiscalPostalCode: string;
+  fiscalState: string;
+  fiscalCity: string;
+  fiscalNeighborhood: string;
+  fiscalStreet: string;
+  fiscalExteriorNumber: string;
+  fiscalInteriorNumber: string;
+  fiscalReference: string;
   contacts: string;
   services: string;
   domains: string;
@@ -74,11 +88,22 @@ const emptyForm: ClientForm = {
   businessName: "",
   legalName: "",
   rfc: "",
+  taxRegime: "616 - Sin obligaciones fiscales",
+  cfdiUse: "S01 - Sin efectos fiscales",
   status: "active",
   segment: "",
   website: "",
   primaryService: "",
   notes: "",
+  fiscalCountry: "México",
+  fiscalPostalCode: "",
+  fiscalState: "",
+  fiscalCity: "",
+  fiscalNeighborhood: "",
+  fiscalStreet: "",
+  fiscalExteriorNumber: "",
+  fiscalInteriorNumber: "",
+  fiscalReference: "",
   contacts: "",
   services: "",
   domains: "",
@@ -146,15 +171,28 @@ function formatLines(items: Record<string, string>[] = [], keys: string[]) {
 }
 
 function clientToForm(client: ClientItem): ClientForm {
+  const fiscalAddress = client.fiscalAddress || {};
+
   return {
     businessName: client.businessName || "",
     legalName: client.legalName || client.businessName || "",
     rfc: client.rfc || "",
+    taxRegime: client.taxRegime || defaultTaxRegime,
+    cfdiUse: client.cfdiUse || defaultCfdiUse,
     status: client.status || "active",
     segment: client.segment || "",
     website: client.website || "",
     primaryService: client.primaryService || "",
     notes: client.notes || "",
+    fiscalCountry: fiscalAddress.country || "México",
+    fiscalPostalCode: fiscalAddress.postalCode || "",
+    fiscalState: fiscalAddress.state || "",
+    fiscalCity: fiscalAddress.city || "",
+    fiscalNeighborhood: fiscalAddress.neighborhood || "",
+    fiscalStreet: fiscalAddress.street || "",
+    fiscalExteriorNumber: fiscalAddress.exteriorNumber || "",
+    fiscalInteriorNumber: fiscalAddress.interiorNumber || "",
+    fiscalReference: fiscalAddress.reference || "",
     contacts: formatLines(client.contacts, ["name", "role", "email", "phone"]),
     services: formatLines(client.services, ["name", "status", "startDate", "renewalDate"]),
     domains: formatLines(client.domains, ["domain", "registrar", "expiresAt", "dnsStatus"]),
@@ -172,11 +210,24 @@ function formToPayload(form: ClientForm) {
     businessName: form.businessName,
     legalName: form.legalName,
     rfc: form.rfc,
+    taxRegime: form.taxRegime,
+    cfdiUse: form.cfdiUse,
     status: form.status,
     segment: form.segment,
     website: form.website,
     primaryService: form.primaryService,
     notes: form.notes,
+    fiscalAddress: {
+      country: form.fiscalCountry,
+      postalCode: form.fiscalPostalCode,
+      state: form.fiscalState,
+      city: form.fiscalCity,
+      neighborhood: form.fiscalNeighborhood,
+      street: form.fiscalStreet,
+      exteriorNumber: form.fiscalExteriorNumber,
+      interiorNumber: form.fiscalInteriorNumber,
+      reference: form.fiscalReference,
+    },
     contacts: parseLines(form.contacts, ["name", "role", "email", "phone"]),
     services: parseLines(form.services, ["name", "status", "startDate", "renewalDate"]),
     domains: parseLines(form.domains, ["domain", "registrar", "expiresAt", "dnsStatus"]),
@@ -189,16 +240,12 @@ function formToPayload(form: ClientForm) {
   };
 }
 
-function withFiscalDocument(form: ClientForm, taxRegime: string, cfdiUse: string) {
+function withFiscalDefaults(form: ClientForm, taxRegime: string, cfdiUse: string) {
   return {
     ...form,
     rfc: form.rfc.trim() || genericPublicRfc,
-    documents: [
-      form.documents,
-      `Datos fiscales | Fiscal | Régimen: ${taxRegime || "Sin régimen"} | Uso CFDI: ${cfdiUse || "Sin uso CFDI"}`,
-    ]
-      .filter(Boolean)
-      .join("\n"),
+    taxRegime: taxRegime || defaultTaxRegime,
+    cfdiUse: cfdiUse || defaultCfdiUse,
   };
 }
 
@@ -326,9 +373,10 @@ export default function AdminClients() {
   }
 
   function startEditClient(client: ClientItem) {
-    setModalForm(clientToForm(client));
-    setTaxRegime(defaultTaxRegime);
-    setCfdiUse(defaultCfdiUse);
+    const clientForm = clientToForm(client);
+    setModalForm(clientForm);
+    setTaxRegime(clientForm.taxRegime);
+    setCfdiUse(clientForm.cfdiUse);
     setEditingClientId(client.id);
     setActionClientId("");
     setModalStep(0);
@@ -342,6 +390,8 @@ export default function AdminClients() {
     setEditingClientId("");
     setModalStep(0);
     setModalForm(emptyForm);
+    setTaxRegime(defaultTaxRegime);
+    setCfdiUse(defaultCfdiUse);
   }
 
   async function disableClient(client: ClientItem) {
@@ -373,7 +423,7 @@ export default function AdminClients() {
     setMessage("");
 
     try {
-      const payload = formToPayload(withFiscalDocument(modalForm, taxRegime, cfdiUse));
+      const payload = formToPayload(withFiscalDefaults(modalForm, taxRegime, cfdiUse));
       const response = await api.post<{ client: ClientItem }>("/api/admin/clients", payload);
 
       setClients((currentClients) => [response.data.client, ...currentClients]);
@@ -392,7 +442,7 @@ export default function AdminClients() {
     setMessage("");
 
     try {
-      const payload = formToPayload(withFiscalDocument(modalForm, taxRegime, cfdiUse));
+      const payload = formToPayload(withFiscalDefaults(modalForm, taxRegime, cfdiUse));
 
       const response = editingClientId
         ? await api.patch<{ client: ClientItem }>(`/api/admin/clients/${editingClientId}`, payload)
@@ -531,17 +581,17 @@ export default function AdminClients() {
           <div className="client-register-grid is-four">
             <label>
               <span className="client-register-label">País <b>*</b></span>
-              <select defaultValue="México">
+              <select value={modalForm.fiscalCountry} onChange={(event) => updateModalForm("fiscalCountry", event.target.value)}>
                 <option>México</option>
               </select>
             </label>
             <label>
               <span className="client-register-label">Código postal <b>*</b></span>
-              <input placeholder="Ej. 44100" />
+              <input placeholder="Ej. 44100" value={modalForm.fiscalPostalCode} onChange={(event) => updateModalForm("fiscalPostalCode", event.target.value)} />
             </label>
             <label>
               <span className="client-register-label">Estado <b>*</b></span>
-              <select defaultValue="">
+              <select value={modalForm.fiscalState} onChange={(event) => updateModalForm("fiscalState", event.target.value)}>
                 <option value="">Seleccionar estado</option>
                 <option>Jalisco</option>
                 <option>Ciudad de México</option>
@@ -550,31 +600,54 @@ export default function AdminClients() {
             </label>
             <label>
               <span className="client-register-label">Ciudad <b>*</b></span>
-              <input placeholder="Ej. Guadalajara" />
+              <input placeholder="Ej. Guadalajara" value={modalForm.fiscalCity} onChange={(event) => updateModalForm("fiscalCity", event.target.value)} />
             </label>
             <label>
               Colonia
-              <input placeholder="Ej. Providencia" />
+              <input
+                placeholder="Ej. Providencia"
+                value={modalForm.fiscalNeighborhood}
+                onChange={(event) => updateModalForm("fiscalNeighborhood", event.target.value)}
+              />
             </label>
             <label>
               <span className="client-register-label">Calle <b>*</b></span>
-              <input placeholder="Ej. Av. México" />
+              <input placeholder="Ej. Av. México" value={modalForm.fiscalStreet} onChange={(event) => updateModalForm("fiscalStreet", event.target.value)} />
             </label>
             <label>
               <span className="client-register-label">Número exterior <b>*</b></span>
-              <input placeholder="Ej. 1234" />
+              <input
+                placeholder="Ej. 1234"
+                value={modalForm.fiscalExteriorNumber}
+                onChange={(event) => updateModalForm("fiscalExteriorNumber", event.target.value)}
+              />
             </label>
             <label>
               Número interior
-              <input placeholder="Ej. 5A" />
+              <input
+                placeholder="Ej. 5A"
+                value={modalForm.fiscalInteriorNumber}
+                onChange={(event) => updateModalForm("fiscalInteriorNumber", event.target.value)}
+              />
             </label>
             <label>
               Referencia
-              <input placeholder="Ej. Entre calle 1 y calle 2" />
+              <input
+                placeholder="Ej. Entre calle 1 y calle 2"
+                value={modalForm.fiscalReference}
+                onChange={(event) => updateModalForm("fiscalReference", event.target.value)}
+              />
             </label>
             <label>
               <span className="client-register-label">Régimen fiscal <b>*</b></span>
-              <select required value={taxRegime} onChange={(event) => setTaxRegime(event.target.value)}>
+              <select
+                required
+                value={taxRegime}
+                onChange={(event) => {
+                  setTaxRegime(event.target.value);
+                  updateModalForm("taxRegime", event.target.value);
+                }}
+              >
                 <option value="">Seleccionar régimen</option>
                 <option value="601 - General de Ley Personas Morales">601 - General de Ley Personas Morales</option>
                 <option value="603 - Personas Morales con Fines no Lucrativos">603 - Personas Morales con Fines no Lucrativos</option>
@@ -588,7 +661,14 @@ export default function AdminClients() {
             </label>
             <label>
               <span className="client-register-label">Uso de CFDI <b>*</b></span>
-              <select required value={cfdiUse} onChange={(event) => setCfdiUse(event.target.value)}>
+              <select
+                required
+                value={cfdiUse}
+                onChange={(event) => {
+                  setCfdiUse(event.target.value);
+                  updateModalForm("cfdiUse", event.target.value);
+                }}
+              >
                 <option value="">Seleccionar uso</option>
                 <option value="G01 - Adquisición de mercancías">G01 - Adquisición de mercancías</option>
                 <option value="G03 - Gastos en general">G03 - Gastos en general</option>
