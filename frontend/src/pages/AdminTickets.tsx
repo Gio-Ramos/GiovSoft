@@ -18,13 +18,7 @@ interface TicketItem {
   lastUpdate: string;
 }
 
-const ticketsSeed: TicketItem[] = [
-  { id: "ticket-1", folio: "TK-2026-0018", client: "Clínica Valle del Sol", subject: "No llegan correos de contacto del sitio", channel: "WhatsApp", priority: "urgent", status: "open", owner: "Ana Sofía Martínez", createdAt: "2026-06-30", slaDue: "Hoy, 06:30 PM", lastUpdate: "Hace 18 min" },
-  { id: "ticket-2", folio: "TK-2026-0017", client: "Hospital Central", subject: "Validar alta de cuentas Google Workspace", channel: "Correo", priority: "high", status: "in_progress", owner: "Jorge Ramírez", createdAt: "2026-06-30", slaDue: "Hoy, 08:00 PM", lastUpdate: "Hace 42 min" },
-  { id: "ticket-3", folio: "TK-2026-0016", client: "Nova Farma", subject: "Solicitan ajuste de banner en ecommerce", channel: "Panel", priority: "medium", status: "waiting", owner: "Lucía Gómez", createdAt: "2026-06-29", slaDue: "Mañana, 10:00 AM", lastUpdate: "Ayer, 05:12 PM" },
-  { id: "ticket-4", folio: "TK-2026-0015", client: "Dermatología & Belleza", subject: "Confirmar renovación mensual GiovSoft 360", channel: "Teléfono", priority: "low", status: "resolved", owner: "María Fernanda López", createdAt: "2026-06-28", slaDue: "Resuelto", lastUpdate: "Hoy, 11:20 AM" },
-  { id: "ticket-5", folio: "TK-2026-0014", client: "Laboratorio Clínico", subject: "Actualizar registros DNS para dominio principal", channel: "Correo", priority: "high", status: "closed", owner: "Carlos Hernández", createdAt: "2026-06-27", slaDue: "Cerrado", lastUpdate: "Ayer, 09:35 AM" },
-];
+const ticketsSeed: TicketItem[] = [];
 
 const statusLabels: Record<TicketStatus, string> = {
   open: "Abierto",
@@ -74,7 +68,7 @@ export default function AdminTickets() {
     setTickets((current) => [
       {
         id: crypto.randomUUID(),
-        folio: `TK-2026-${String(current.length + 14).padStart(4, "0")}`,
+        folio: `TK-2026-${String(current.length + 1).padStart(4, "0")}`,
         client: "Cliente por asignar",
         subject: "Nuevo ticket de soporte",
         channel: "Panel",

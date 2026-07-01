@@ -15,12 +15,7 @@ interface ReceiptItem {
   uploadedAt: string;
 }
 
-const receiptsSeed: ReceiptItem[] = [
-  { id: "rec-1", folio: "UUID-8F23", client: "Clínica Valle del Sol", type: "CFDI ingreso", fileName: "F-2026-000123.xml", amount: 14990, status: "valid", uploadedAt: "2026-06-25" },
-  { id: "rec-2", folio: "UUID-9A11", client: "Hospital Central", type: "PDF factura", fileName: "F-2026-000124.pdf", amount: 3490, status: "valid", uploadedAt: "2026-06-20" },
-  { id: "rec-3", folio: "PEND-001", client: "Nova Farma", type: "Comprobante pago", fileName: "transferencia-nova.png", amount: 39990, status: "pending", uploadedAt: "2026-06-30" },
-  { id: "rec-4", folio: "REV-445", client: "Laboratorio Clínico", type: "CFDI ingreso", fileName: "dns-lab.xml", amount: 690, status: "rejected", uploadedAt: "2026-06-15" },
-];
+const receiptsSeed: ReceiptItem[] = [];
 
 const statusLabels: Record<ReceiptStatus, string> = {
   valid: "Validado",

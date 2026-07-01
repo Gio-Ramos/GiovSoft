@@ -24,18 +24,13 @@ interface QueueItem {
 }
 
 const supportChannels: SupportChannel[] = [
-  { id: "whatsapp", name: "WhatsApp", description: "Atención rápida para incidencias y confirmaciones.", icon: MessageSquareText, status: "online", volume: 18, responseTime: "12 min" },
-  { id: "email", name: "Correo", description: "Seguimiento formal, evidencias y acuerdos de servicio.", icon: Send, status: "online", volume: 11, responseTime: "35 min" },
-  { id: "phone", name: "Teléfono", description: "Casos urgentes, validaciones y soporte directo.", icon: PhoneCall, status: "busy", volume: 6, responseTime: "8 min" },
-  { id: "assistant", name: "Asistente interno", description: "Respuestas base, artículos y sugerencias de atención.", icon: Bot, status: "online", volume: 24, responseTime: "1 min" },
+  { id: "whatsapp", name: "WhatsApp", description: "Atención rápida para incidencias y confirmaciones.", icon: MessageSquareText, status: "offline", volume: 0, responseTime: "Sin actividad" },
+  { id: "email", name: "Correo", description: "Seguimiento formal, evidencias y acuerdos de servicio.", icon: Send, status: "offline", volume: 0, responseTime: "Sin actividad" },
+  { id: "phone", name: "Teléfono", description: "Casos urgentes, validaciones y soporte directo.", icon: PhoneCall, status: "offline", volume: 0, responseTime: "Sin actividad" },
+  { id: "assistant", name: "Asistente interno", description: "Respuestas base, artículos y sugerencias de atención.", icon: Bot, status: "offline", volume: 0, responseTime: "Sin actividad" },
 ];
 
-const queueSeed: QueueItem[] = [
-  { id: "support-1", client: "Clínica Valle del Sol", topic: "Correo de formulario no recibido", owner: "Ana Sofía Martínez", status: "open", sla: "42 min" },
-  { id: "support-2", client: "Hospital Central", topic: "Alta de usuarios Workspace", owner: "Jorge Ramírez", status: "in_progress", sla: "1 h 20 min" },
-  { id: "support-3", client: "Nova Farma", topic: "Ajuste de contenido ecommerce", owner: "Lucía Gómez", status: "waiting", sla: "Mañana" },
-  { id: "support-4", client: "Dermatología & Belleza", topic: "Renovación mensual confirmada", owner: "María Fernanda López", status: "resolved", sla: "Completado" },
-];
+const queueSeed: QueueItem[] = [];
 
 const statusLabels: Record<QueueStatus, string> = {
   open: "Abierto",
@@ -50,12 +45,7 @@ const channelLabels: Record<ChannelStatus, string> = {
   offline: "Fuera de línea",
 };
 
-const knowledgeItems = [
-  "Configuración inicial de Google Workspace",
-  "Checklist para publicación de sitio web",
-  "DNS, dominio y propagación",
-  "Proceso para comprobantes y facturación",
-];
+const knowledgeItems: string[] = [];
 
 export default function AdminSupport() {
   const [queue, setQueue] = useState(queueSeed);

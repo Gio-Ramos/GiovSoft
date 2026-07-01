@@ -48,7 +48,7 @@ interface RoleForm {
   permissions: Record<string, PermissionAction[]>;
 }
 
-const storageKey = "giovsoft-admin-roles";
+const storageKey = "giovsoft-admin-roles-v2";
 
 const permissionModules: PermissionModule[] = [
   { key: "dashboard", name: "Dashboard", description: "Resumen general y métricas del panel." },
@@ -131,11 +131,6 @@ const allPermissions = permissionModules.reduce<Record<string, PermissionAction[
   return permissions;
 }, {});
 
-const readOnlyPermissions = permissionModules.reduce<Record<string, PermissionAction[]>>((permissions, module) => {
-  permissions[module.key] = ["view"];
-  return permissions;
-}, {});
-
 const emptyPermissions = permissionModules.reduce<Record<string, PermissionAction[]>>((permissions, module) => {
   permissions[module.key] = [];
   return permissions;
@@ -149,91 +144,7 @@ const emptyForm: RoleForm = {
   permissions: emptyPermissions,
 };
 
-const demoRoles: RoleItem[] = [
-  {
-    id: "role-1",
-    name: "Administrador",
-    description: "Control total del panel, usuarios, empresas y configuración.",
-    scope: "Sistema",
-    status: "active",
-    users: 12,
-    permissions: allPermissions,
-    createdAt: "2026-04-01T10:00:00.000Z",
-  },
-  {
-    id: "role-2",
-    name: "Gerente",
-    description: "Gestiona clientes, proyectos y reportes operativos.",
-    scope: "Operación",
-    status: "active",
-    users: 18,
-    permissions: {
-      ...readOnlyPermissions,
-      clients: ["view", "create", "edit"],
-      companies: ["view", "create", "edit"],
-      projects: ["view", "create", "edit"],
-      reports: ["view"],
-    },
-    createdAt: "2026-04-05T10:00:00.000Z",
-  },
-  {
-    id: "role-3",
-    name: "Editor",
-    description: "Actualiza información comercial, clientes y proyectos.",
-    scope: "Contenido",
-    status: "active",
-    users: 24,
-    permissions: {
-      ...emptyPermissions,
-      dashboard: ["view"],
-      clients: ["view", "edit"],
-      products: ["view", "create", "edit"],
-      projects: ["view", "edit"],
-    },
-    createdAt: "2026-04-08T10:00:00.000Z",
-  },
-  {
-    id: "role-4",
-    name: "Analista",
-    description: "Consulta información y genera reportes sin modificar registros.",
-    scope: "Lectura",
-    status: "active",
-    users: 16,
-    permissions: readOnlyPermissions,
-    createdAt: "2026-04-10T10:00:00.000Z",
-  },
-  {
-    id: "role-5",
-    name: "Soporte",
-    description: "Atiende tickets, soporte y seguimiento de clientes.",
-    scope: "Soporte",
-    status: "active",
-    users: 8,
-    permissions: {
-      ...emptyPermissions,
-      dashboard: ["view"],
-      clients: ["view", "edit"],
-      companies: ["view"],
-      projects: ["view", "edit"],
-      reports: ["view"],
-    },
-    createdAt: "2026-04-15T10:00:00.000Z",
-  },
-  {
-    id: "role-6",
-    name: "Invitado",
-    description: "Acceso limitado de consulta para usuarios externos.",
-    scope: "Externo",
-    status: "inactive",
-    users: 3,
-    permissions: {
-      ...emptyPermissions,
-      dashboard: ["view"],
-      reports: ["view"],
-    },
-    createdAt: "2026-05-01T10:00:00.000Z",
-  },
-];
+const demoRoles: RoleItem[] = [];
 
 function permissionCount(permissions: Record<string, PermissionAction[]>) {
   return Object.values(permissions).reduce((total, actions) => total + actions.length, 0);

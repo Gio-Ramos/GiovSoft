@@ -4,19 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import { getAdminRequests, type ContactRequest } from "../lib/adminRequests";
 
 const monthlyRevenue = [
-  { month: "Ene", value: 62000 },
-  { month: "Feb", value: 72000 },
-  { month: "Mar", value: 94000 },
-  { month: "Abr", value: 102000 },
-  { month: "May", value: 136000 },
-  { month: "Jun", value: 126000 },
+  { month: "Ene", value: 0 },
+  { month: "Feb", value: 0 },
+  { month: "Mar", value: 0 },
+  { month: "Abr", value: 0 },
+  { month: "May", value: 0 },
+  { month: "Jun", value: 0 },
 ];
 
 const reportCards = [
-  { id: "sales", title: "Ventas y leads", description: "Solicitudes, conversión y fuentes de contacto.", updatedAt: "Hoy, 10:45 AM" },
-  { id: "billing", title: "Facturación", description: "Facturas, pagos recurrentes y cobranza.", updatedAt: "Hoy, 09:30 AM" },
-  { id: "projects", title: "Proyectos", description: "Avance, entregables y responsables.", updatedAt: "Ayer, 06:15 PM" },
-  { id: "support", title: "Soporte", description: "Tickets, SLA y carga por canal.", updatedAt: "Ayer, 04:40 PM" },
+  { id: "sales", title: "Ventas y leads", description: "Solicitudes, conversión y fuentes de contacto.", updatedAt: "Sin generar" },
+  { id: "billing", title: "Facturación", description: "Facturas, pagos recurrentes y cobranza.", updatedAt: "Sin generar" },
+  { id: "projects", title: "Proyectos", description: "Avance, entregables y responsables.", updatedAt: "Sin generar" },
+  { id: "support", title: "Soporte", description: "Tickets, SLA y carga por canal.", updatedAt: "Sin generar" },
 ];
 
 function money(value: number) {

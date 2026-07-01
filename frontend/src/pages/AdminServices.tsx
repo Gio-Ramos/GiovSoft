@@ -52,7 +52,7 @@ interface PlanForm {
   status: "active" | "inactive";
 }
 
-const storageKey = "giovsoft-admin-services";
+const storageKey = "giovsoft-admin-services-v2";
 
 const emptyPlanForm: PlanForm = {
   name: "",
@@ -64,82 +64,7 @@ const emptyPlanForm: PlanForm = {
   status: "active",
 };
 
-const demoServices: ServiceItem[] = [
-  {
-    id: "srv-360",
-    name: "GiovSoft 360",
-    category: "Paquete integral",
-    description: "Acompañamiento integral para crear, conectar y mantener la base digital del negocio.",
-    status: "active",
-    variablePricing: false,
-    plans: [
-      { id: "plan-360-pro", name: "Profesional", description: "Sitio, dominio, correos y soporte base.", priceMode: "fixed", price: 12490, currency: "MXN", billingCycle: "Mensual", status: "active" },
-      { id: "plan-360-business", name: "Business", description: "Operación digital completa con prioridad.", priceMode: "fixed", price: 22490, currency: "MXN", billingCycle: "Mensual", status: "active" },
-    ],
-  },
-  {
-    id: "srv-web",
-    name: "Sitios web",
-    category: "Desarrollo web",
-    description: "Páginas modernas, rápidas y claras para presentar negocios y captar clientes.",
-    status: "active",
-    variablePricing: false,
-    plans: [
-      { id: "plan-web-basic", name: "Básico", description: "Sitio informativo de hasta 5 secciones.", priceMode: "fixed", price: 8990, currency: "MXN", billingCycle: "Único", status: "active" },
-      { id: "plan-web-pro", name: "Profesional", description: "Sitio corporativo con contenido ampliado.", priceMode: "fixed", price: 14990, currency: "MXN", billingCycle: "Único", status: "active" },
-      { id: "plan-web-care", name: "Mantenimiento", description: "Actualizaciones, respaldos y mejoras menores.", priceMode: "fixed", price: 1890, currency: "MXN", billingCycle: "Mensual", status: "active" },
-    ],
-  },
-  {
-    id: "srv-ecommerce",
-    name: "Ecommerce",
-    category: "Venta digital",
-    description: "Tiendas en línea con productos, pedidos, pagos y envíos.",
-    status: "active",
-    variablePricing: false,
-    plans: [
-      { id: "plan-ecom-start", name: "Inicial", description: "Catálogo, carrito y checkout base.", priceMode: "fixed", price: 24990, currency: "MXN", billingCycle: "Único", status: "active" },
-      { id: "plan-ecom-growth", name: "Crecimiento", description: "Pagos, envíos e integraciones comerciales.", priceMode: "fixed", price: 39990, currency: "MXN", billingCycle: "Único", status: "active" },
-    ],
-  },
-  {
-    id: "srv-domains",
-    name: "Dominios",
-    category: "Infraestructura",
-    description: "Registro, configuración DNS y administración de dominios.",
-    status: "active",
-    variablePricing: true,
-    plans: [
-      { id: "plan-domain-com", name: ".com / .com.mx", description: "El costo depende de disponibilidad, extensión y proveedor.", priceMode: "variable", price: 0, currency: "MXN", billingCycle: "Variable", status: "active" },
-      { id: "plan-domain-premium", name: "Dominio premium", description: "Valor sujeto a cotización del registrador.", priceMode: "variable", price: 0, currency: "MXN", billingCycle: "Variable", status: "active" },
-      { id: "plan-domain-admin", name: "Administración DNS", description: "Gestión y cambios DNS bajo demanda.", priceMode: "fixed", price: 690, currency: "MXN", billingCycle: "Único", status: "active" },
-    ],
-  },
-  {
-    id: "srv-mail",
-    name: "Correos corporativos",
-    category: "Comunicación",
-    description: "Cuentas profesionales con dominio propio, configuración y soporte.",
-    status: "active",
-    variablePricing: false,
-    plans: [
-      { id: "plan-mail-setup", name: "Configuración inicial", description: "Alta de dominio, registros y primera cuenta.", priceMode: "fixed", price: 1490, currency: "MXN", billingCycle: "Único", status: "active" },
-      { id: "plan-mail-account", name: "Cuenta adicional", description: "Configuración de cuenta por usuario.", priceMode: "fixed", price: 390, currency: "MXN", billingCycle: "Mensual", status: "active" },
-    ],
-  },
-  {
-    id: "srv-workspace",
-    name: "Google Workspace",
-    category: "Productividad",
-    description: "Gmail empresarial, Drive, Meet, Calendario y administración de usuarios.",
-    status: "active",
-    variablePricing: true,
-    plans: [
-      { id: "plan-ws-setup", name: "Implementación", description: "Configuración inicial y adopción del equipo.", priceMode: "fixed", price: 3490, currency: "MXN", billingCycle: "Único", status: "active" },
-      { id: "plan-ws-license", name: "Licencia por usuario", description: "Costo sujeto al plan contratado con Google.", priceMode: "variable", price: 0, currency: "MXN", billingCycle: "Variable", status: "active" },
-    ],
-  },
-];
+const demoServices: ServiceItem[] = [];
 
 function serviceIcon(name: string) {
   if (name.includes("Dominio")) return Globe2;

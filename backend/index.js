@@ -699,6 +699,11 @@ async function ensureAdminUsersFile() {
   try {
     await fs.access(adminUsersFile);
   } catch {
+    if (masterAdminEmail && masterAdminPassword) {
+      await fs.writeFile(adminUsersFile, "[]", "utf8");
+      return;
+    }
+
     const now = new Date().toISOString();
     const seedUser = {
       id: crypto.randomUUID(),

@@ -27,82 +27,8 @@ import { getAdminToken, readAdminUser, type AdminUser } from "../lib/adminSessio
 const temporaryPassword = "123456";
 
 const roleOptions = ["Administrador", "Gerente", "Editor", "Analista", "Soporte", "Invitado"];
-const companyOptions = ["GiovSoft Technologies", "Cliente Externo", "Clínica Valle del Sol", "Hospital Central"];
-
-const demoUsers: AdminUser[] = [
-  {
-    id: "demo-1",
-    name: "Giovanni Ramos",
-    email: "giovanni@giovsoft.com",
-    role: "Administrador",
-    status: "active",
-    passwordChangeRequired: false,
-    lastLoginAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-2",
-    name: "María Fernanda López",
-    email: "maria.lopez@giovsoft.com",
-    role: "Gerente",
-    status: "active",
-    passwordChangeRequired: false,
-    lastLoginAt: new Date().toISOString(),
-  },
-  {
-    id: "demo-3",
-    name: "Carlos Hernández",
-    email: "carlos.hdz@giovsoft.com",
-    role: "Editor",
-    status: "active",
-    passwordChangeRequired: true,
-    lastLoginAt: "2026-06-28T16:21:00.000Z",
-  },
-  {
-    id: "demo-4",
-    name: "Ana Sofía Martínez",
-    email: "ana.martinez@giovsoft.com",
-    role: "Analista",
-    status: "active",
-    passwordChangeRequired: false,
-    lastLoginAt: "2026-06-28T14:15:00.000Z",
-  },
-  {
-    id: "demo-5",
-    name: "Jorge Ramírez",
-    email: "jorge.ramirez@giovsoft.com",
-    role: "Soporte",
-    status: "active",
-    passwordChangeRequired: false,
-    lastLoginAt: "2026-06-27T11:08:00.000Z",
-  },
-  {
-    id: "demo-6",
-    name: "Lucía Gómez",
-    email: "lucia.gomez@giovsoft.com",
-    role: "Editor",
-    status: "inactive",
-    passwordChangeRequired: true,
-    lastLoginAt: "2026-05-15T10:00:00.000Z",
-  },
-  {
-    id: "demo-7",
-    name: "Ricardo Torres",
-    email: "ricardo.torres@cliente.com",
-    role: "Invitado",
-    status: "inactive",
-    passwordChangeRequired: true,
-    lastLoginAt: "2026-05-10T09:00:00.000Z",
-  },
-  {
-    id: "demo-8",
-    name: "Valeria Castro",
-    email: "valeria.castro@giovsoft.com",
-    role: "Analista",
-    status: "active",
-    passwordChangeRequired: false,
-    lastLoginAt: "2026-05-08T08:30:00.000Z",
-  },
-];
+const companyOptions = ["GiovSoft Technologies", "Cliente Externo"];
+const demoUsers: AdminUser[] = [];
 
 const initialUserForm = {
   firstName: "",
@@ -433,7 +359,7 @@ export default function AdminUsers() {
                   <span className="user-register-label">Nombre(s) <b>*</b></span>
                   <input
                     onChange={(event) => updateForm("firstName", event.target.value)}
-                    placeholder="Ej. María Fernanda"
+                    placeholder="Ej. Nombre"
                     value={form.firstName}
                   />
                 </label>

@@ -59,7 +59,7 @@ interface CompanyForm {
   notes: string;
 }
 
-const storageKey = "giovsoft-admin-companies";
+const storageKey = "giovsoft-admin-companies-v2";
 
 const emptyForm: CompanyForm = {
   commercialName: "",
@@ -80,122 +80,7 @@ const emptyForm: CompanyForm = {
   notes: "",
 };
 
-const demoCompanies: CompanyItem[] = [
-  {
-    id: "company-1",
-    commercialName: "GioSoft Technologies",
-    legalName: "GioSoft Technologies S.A. de C.V.",
-    rfc: "GTE260101A10",
-    industry: "Tecnología",
-    status: "active",
-    plan: "Business",
-    contactName: "Giovanni Ramos",
-    contactRole: "Administrador",
-    email: "giovanni@giovsoft.com",
-    phone: "+52 33 1000 1000",
-    website: "giovsoft.com",
-    city: "Guadalajara",
-    state: "Jalisco",
-    address: "Av. México 1234",
-    employees: "11-50",
-    createdAt: "2026-04-12T10:00:00.000Z",
-  },
-  {
-    id: "company-2",
-    commercialName: "Clínica Valle del Sol",
-    legalName: "Clínica Valle del Sol S.C.",
-    rfc: "CVS850101123",
-    industry: "Salud",
-    status: "active",
-    plan: "Profesional",
-    contactName: "Dra. Ana Martínez",
-    contactRole: "Directora General",
-    email: "ana.martinez@valledelsol.com",
-    phone: "+52 33 1234 5678",
-    website: "valledelsol.com",
-    city: "Guadalajara",
-    state: "Jalisco",
-    address: "Providencia 240",
-    employees: "51-200",
-    createdAt: "2026-05-28T10:00:00.000Z",
-  },
-  {
-    id: "company-3",
-    commercialName: "Hospital Central",
-    legalName: "Hospital Central S.A. de C.V.",
-    rfc: "HCE7708123A5",
-    industry: "Salud",
-    status: "active",
-    plan: "Business",
-    contactName: "Ing. Pedro Ramírez",
-    contactRole: "TI Manager",
-    email: "pedro.ramirez@central.com",
-    phone: "+52 33 4567 8901",
-    website: "central.com",
-    city: "Zapopan",
-    state: "Jalisco",
-    address: "Av. Patria 800",
-    employees: "201-500",
-    createdAt: "2026-05-18T10:00:00.000Z",
-  },
-  {
-    id: "company-4",
-    commercialName: "Nova Farma",
-    legalName: "Nova Farma S.A.",
-    rfc: "NFA9403031B2",
-    industry: "Farmacéutica",
-    status: "active",
-    plan: "Avanzado",
-    contactName: "Lic. Sofía Núñez",
-    contactRole: "Directora",
-    email: "sofia.nunez@novafarma.com",
-    phone: "+52 33 7890 1234",
-    website: "novafarma.com",
-    city: "Monterrey",
-    state: "Nuevo León",
-    address: "Industria 550",
-    employees: "51-200",
-    createdAt: "2026-05-10T10:00:00.000Z",
-  },
-  {
-    id: "company-5",
-    commercialName: "Laboratorio Clínico",
-    legalName: "Laboratorio Clínico Integral S.C.",
-    rfc: "LCL9109055P6",
-    industry: "Laboratorio",
-    status: "inactive",
-    plan: "Básico",
-    contactName: "QFB. Mariana López",
-    contactRole: "Gerente",
-    email: "mariana.lopez@labclinico.com",
-    phone: "+52 33 5678 9012",
-    website: "labclinico.com",
-    city: "Tlaquepaque",
-    state: "Jalisco",
-    address: "Centro 120",
-    employees: "1-10",
-    createdAt: "2026-05-15T10:00:00.000Z",
-  },
-  {
-    id: "company-6",
-    commercialName: "OptiSalud",
-    legalName: "OptiSalud S.A. de C.V.",
-    rfc: "OPS8811227Q7",
-    industry: "Retail salud",
-    status: "active",
-    plan: "Profesional",
-    contactName: "Lic. Ricardo Torres",
-    contactRole: "Admin. General",
-    email: "ricardo.torres@optisalud.com",
-    phone: "+52 33 6789 0123",
-    website: "optisalud.com",
-    city: "Guadalajara",
-    state: "Jalisco",
-    address: "Chapultepec 210",
-    employees: "11-50",
-    createdAt: "2026-05-12T10:00:00.000Z",
-  },
-];
+const demoCompanies: CompanyItem[] = [];
 
 function initials(name: string) {
   return name
@@ -399,7 +284,7 @@ export default function AdminCompanies() {
                 <span className="client-register-label">Nombre comercial <b>*</b></span>
                 <input
                   onChange={(event) => updateForm("commercialName", event.target.value)}
-                  placeholder="Ej. Clínica Valle del Sol"
+                  placeholder="Ej. Empresa demo"
                   value={form.commercialName}
                 />
               </label>
@@ -407,7 +292,7 @@ export default function AdminCompanies() {
                 <span className="client-register-label">Razón social <b>*</b></span>
                 <input
                   onChange={(event) => updateForm("legalName", event.target.value)}
-                  placeholder="Ej. Clínica Valle del Sol S.C."
+                  placeholder="Ej. Empresa demo S.C."
                   value={form.legalName}
                 />
               </label>

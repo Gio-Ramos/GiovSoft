@@ -1,4 +1,4 @@
-import { CheckCircle2, Cloud, DatabaseZap, KeyRound, Mail, MessageSquareText, MoreVertical, Plug, RefreshCw, Settings2, ShieldCheck, Webhook } from "lucide-react";
+import { CheckCircle2, MoreVertical, Plug, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type IntegrationStatus = "connected" | "pending" | "error" | "disabled";
@@ -13,14 +13,7 @@ interface IntegrationItem {
   icon: typeof Plug;
 }
 
-const integrationsSeed: IntegrationItem[] = [
-  { id: "smtp", name: "SMTP correo", description: "Envía notificaciones administrativas y respuestas automáticas.", category: "Comunicación", status: "connected", lastSync: "Hoy, 10:20 AM", icon: Mail },
-  { id: "whatsapp", name: "WhatsApp Business", description: "Seguimiento y alertas rápidas para soporte y ventas.", category: "Comunicación", status: "pending", lastSync: "Pendiente", icon: MessageSquareText },
-  { id: "google", name: "Google Workspace", description: "Gestión de correos, Drive, Meet y cuentas corporativas.", category: "Productividad", status: "connected", lastSync: "Hoy, 09:12 AM", icon: Cloud },
-  { id: "webhooks", name: "Webhooks", description: "Eventos para clientes, pagos, tickets y proyectos.", category: "Automatización", status: "disabled", lastSync: "Sin actividad", icon: Webhook },
-  { id: "database", name: "Base de datos", description: "Conexión PostgreSQL o almacenamiento local JSON.", category: "Infraestructura", status: "connected", lastSync: "Operativo", icon: DatabaseZap },
-  { id: "security", name: "Llaves API", description: "Administración de tokens externos y secretos de integración.", category: "Seguridad", status: "error", lastSync: "Revisión requerida", icon: KeyRound },
-];
+const integrationsSeed: IntegrationItem[] = [];
 
 const statusLabels: Record<IntegrationStatus, string> = {
   connected: "Conectado",

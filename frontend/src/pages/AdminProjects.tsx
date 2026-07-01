@@ -112,91 +112,7 @@ const emptyDeliverableForm: DeliverableForm = {
 
 const serviceOptions = ["GiovSoft 360", "Sitios web", "Ecommerce", "Dominios", "Correos corporativos", "Google Workspace"];
 
-const demoProjects: ProjectItem[] = [
-  {
-    id: "prj-1",
-    name: "Portal web corporativo",
-    client: "Clínica Valle del Sol",
-    service: "Sitios web",
-    manager: "Ana Sofía Martínez",
-    status: "in_progress",
-    dueDate: "2026-07-18",
-    budget: "$14,990",
-    deliverables: [
-      { id: "del-1", title: "Arquitectura del sitio", owner: "Ana Sofía Martínez", status: "done", dueDate: "2026-07-02", notes: "Mapa aprobado por cliente." },
-      { id: "del-2", title: "Diseño UI", owner: "Carlos Hernández", status: "review", dueDate: "2026-07-08", notes: "Pendiente validación final." },
-      { id: "del-3", title: "Desarrollo frontend", owner: "Jorge Ramírez", status: "in_progress", dueDate: "2026-07-14", notes: "Home y contacto en construcción." },
-      { id: "del-4", title: "Publicación", owner: "Lucía Gómez", status: "pending", dueDate: "2026-07-18", notes: "Depende de DNS." },
-    ],
-    comments: [{ id: "com-1", author: "Ana Sofía Martínez", text: "Cliente aprobó estructura y contenidos principales.", createdAt: "2026-06-29T15:20:00.000Z" }],
-    attachments: [{ id: "att-1", name: "brief-clinica-valle.pdf", type: "PDF", uploadedBy: "Ana Sofía Martínez", createdAt: "2026-06-28T11:00:00.000Z" }],
-  },
-  {
-    id: "prj-2",
-    name: "Tienda en línea",
-    client: "Nova Farma",
-    service: "Ecommerce",
-    manager: "Carlos Hernández",
-    status: "planning",
-    dueDate: "2026-08-05",
-    budget: "$39,990",
-    deliverables: [
-      { id: "del-5", title: "Catálogo inicial", owner: "Carlos Hernández", status: "in_progress", dueDate: "2026-07-10", notes: "Importando SKUs base." },
-      { id: "del-6", title: "Checkout", owner: "Jorge Ramírez", status: "pending", dueDate: "2026-07-22", notes: "Pendiente pasarela." },
-    ],
-    comments: [],
-    attachments: [],
-  },
-  {
-    id: "prj-3",
-    name: "Configuración Google Workspace",
-    client: "Hospital Central",
-    service: "Google Workspace",
-    manager: "Jorge Ramírez",
-    status: "review",
-    dueDate: "2026-07-08",
-    budget: "$3,490",
-    deliverables: [
-      { id: "del-7", title: "Alta de usuarios", owner: "Jorge Ramírez", status: "done", dueDate: "2026-07-02", notes: "20 usuarios creados." },
-      { id: "del-8", title: "DNS y seguridad", owner: "Lucía Gómez", status: "done", dueDate: "2026-07-04", notes: "SPF/DKIM configurado." },
-      { id: "del-9", title: "Capacitación", owner: "Valeria Castro", status: "review", dueDate: "2026-07-08", notes: "Sesión agendada." },
-    ],
-    comments: [{ id: "com-2", author: "Jorge Ramírez", text: "Falta evidencia de capacitación para cierre.", createdAt: "2026-06-30T10:10:00.000Z" }],
-    attachments: [],
-  },
-  {
-    id: "prj-4",
-    name: "Migración de correos",
-    client: "OptiSalud",
-    service: "Correos corporativos",
-    manager: "Lucía Gómez",
-    status: "completed",
-    dueDate: "2026-06-22",
-    budget: "$1,490",
-    deliverables: [
-      { id: "del-10", title: "Migración de buzones", owner: "Lucía Gómez", status: "done", dueDate: "2026-06-20", notes: "Completado." },
-      { id: "del-11", title: "Validación final", owner: "Ricardo Torres", status: "done", dueDate: "2026-06-22", notes: "Cliente validó." },
-    ],
-    comments: [],
-    attachments: [],
-  },
-  {
-    id: "prj-5",
-    name: "Administración DNS",
-    client: "Laboratorio Clínico",
-    service: "Dominios",
-    manager: "Ricardo Torres",
-    status: "paused",
-    dueDate: "2026-07-30",
-    budget: "Variable",
-    deliverables: [
-      { id: "del-12", title: "Acceso al registrador", owner: "Ricardo Torres", status: "pending", dueDate: "2026-07-05", notes: "Esperando credenciales del cliente." },
-      { id: "del-13", title: "Configuración DNS", owner: "Ricardo Torres", status: "pending", dueDate: "2026-07-10", notes: "Bloqueado." },
-    ],
-    comments: [{ id: "com-3", author: "Ricardo Torres", text: "Proyecto pausado hasta recibir acceso al dominio.", createdAt: "2026-06-30T09:30:00.000Z" }],
-    attachments: [],
-  },
-];
+const demoProjects: ProjectItem[] = [];
 
 function formatDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString("es-MX");
@@ -595,7 +511,7 @@ export default function AdminProjects() {
           </header>
           <div className="projects-editor-grid">
             <label><span>Proyecto <b>*</b></span><input onChange={(event) => updateForm("name", event.target.value)} placeholder="Ej. Portal web corporativo" value={form.name} /></label>
-            <label><span>Cliente <b>*</b></span><input onChange={(event) => updateForm("client", event.target.value)} placeholder="Ej. Clínica Valle del Sol" value={form.client} /></label>
+            <label><span>Cliente <b>*</b></span><input onChange={(event) => updateForm("client", event.target.value)} placeholder="Ej. Cliente principal" value={form.client} /></label>
             <label>
               <span>Servicio <b>*</b></span>
               <select onChange={(event) => updateForm("service", event.target.value)} value={form.service}>
@@ -603,7 +519,7 @@ export default function AdminProjects() {
                 {serviceOptions.map((service) => <option key={service}>{service}</option>)}
               </select>
             </label>
-            <label><span>Responsable <b>*</b></span><input onChange={(event) => updateForm("manager", event.target.value)} placeholder="Ej. Ana Sofía Martínez" value={form.manager} /></label>
+            <label><span>Responsable <b>*</b></span><input onChange={(event) => updateForm("manager", event.target.value)} placeholder="Ej. Responsable interno" value={form.manager} /></label>
             <label><span>Entrega <b>*</b></span><input onChange={(event) => updateForm("dueDate", event.target.value)} type="date" value={form.dueDate} /></label>
             <label><span>Presupuesto</span><input onChange={(event) => updateForm("budget", event.target.value)} placeholder="Ej. $14,990 o Variable" value={form.budget} /></label>
             <label>

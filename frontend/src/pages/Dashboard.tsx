@@ -58,32 +58,23 @@ const fallbackSummary: DashboardSummary = {
 };
 
 const revenueTrend = [
-  { month: "Ene", value: 62 },
-  { month: "Feb", value: 72 },
-  { month: "Mar", value: 94 },
-  { month: "Abr", value: 102 },
-  { month: "May", value: 136 },
-  { month: "Jun", value: 126 },
+  { month: "Ene", value: 0 },
+  { month: "Feb", value: 0 },
+  { month: "Mar", value: 0 },
+  { month: "Abr", value: 0 },
+  { month: "May", value: 0 },
+  { month: "Jun", value: 0 },
 ];
 
-const activityItems = [
-  { id: "act-1", title: "Nuevo cliente registrado", detail: "Clínica Valle del Sol", time: "Hoy, 10:45 AM", tone: "is-blue" },
-  { id: "act-2", title: "Factura emitida", detail: "F-2026-000123", time: "Hoy, 09:32 AM", tone: "is-green" },
-  { id: "act-3", title: "Ticket urgente creado", detail: "Formulario de contacto", time: "Hoy, 08:50 AM", tone: "is-orange" },
-  { id: "act-4", title: "Proyecto actualizado", detail: "Portal web corporativo", time: "Ayer, 04:21 PM", tone: "is-purple" },
-];
+const activityItems: { id: string; title: string; detail: string; time: string; tone: string }[] = [];
 
 const operationItems = [
-  { label: "Proyectos activos", value: "12", progress: 68, icon: BriefcaseBusiness, tone: "is-blue", href: "/admin/proyectos" },
-  { label: "Tickets abiertos", value: "5", progress: 42, icon: MessageCircle, tone: "is-orange", href: "/admin/tickets" },
-  { label: "Facturas pendientes", value: "7", progress: 54, icon: ReceiptText, tone: "is-purple", href: "/admin/facturacion" },
+  { label: "Proyectos activos", value: "0", progress: 0, icon: BriefcaseBusiness, tone: "is-blue", href: "/admin/proyectos" },
+  { label: "Tickets abiertos", value: "0", progress: 0, icon: MessageCircle, tone: "is-orange", href: "/admin/tickets" },
+  { label: "Facturas pendientes", value: "0", progress: 0, icon: ReceiptText, tone: "is-purple", href: "/admin/facturacion" },
 ];
 
-const billingQueue = [
-  { client: "Hospital Central", concept: "Google Workspace mensualidad", amount: "$7,800", due: "01/07/2026", status: "Vencido" },
-  { client: "Clínica Valle del Sol", concept: "Mantenimiento web", amount: "$1,890", due: "10/07/2026", status: "Pendiente" },
-  { client: "Nova Farma", concept: "Ecommerce crecimiento", amount: "$20,000", due: "20/07/2026", status: "Parcial" },
-];
+const billingQueue: { client: string; concept: string; amount: string; due: string; status: string }[] = [];
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-MX", {
@@ -122,9 +113,9 @@ export default function Dashboard() {
   }, [summary.stats]);
 
   const mainStats = [
-    { label: "Clientes activos", value: "1,248", change: "↑ 12.5% vs. mes anterior", icon: UsersRound, tone: "is-blue" },
-    { label: "Ingresos (MXN)", value: "$125,430", change: "↑ 8.2% vs. mes anterior", icon: WalletCards, tone: "is-green" },
-    { label: "Facturas emitidas", value: "2,340", change: "↑ 15.4% vs. mes anterior", icon: FileText, tone: "is-purple" },
+    { label: "Clientes activos", value: "0", change: "Sin registros", icon: UsersRound, tone: "is-blue" },
+    { label: "Ingresos (MXN)", value: "$0", change: "Sin facturación", icon: WalletCards, tone: "is-green" },
+    { label: "Facturas emitidas", value: "0", change: "Sin facturas", icon: FileText, tone: "is-purple" },
     { label: "Leads activos", value: leadStats.active, change: `${leadStats.today} hoy · ${leadStats.week} últimos 7 días`, icon: ClipboardList, tone: "is-orange" },
   ];
 
@@ -133,7 +124,7 @@ export default function Dashboard() {
       <div className="dashboard-hero">
         <div>
           <span>Panel administrativo</span>
-          <h2>Bienvenido, {user?.name?.split(" ")[0] || "Giovanni"}</h2>
+          <h2>Bienvenido, {user?.name?.split(" ")[0] || "Administrador"}</h2>
           <p>Resumen general de clientes, ingresos, facturación, proyectos y soporte.</p>
         </div>
         <div className="dashboard-hero-actions">

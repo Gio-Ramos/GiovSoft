@@ -44,27 +44,9 @@ interface CollectionItem {
   notes: string;
 }
 
-const invoicesSeed: InvoiceItem[] = [
-  { id: "inv-1", folio: "F-2026-000123", client: "Clínica Valle del Sol", concept: "Sitio web profesional", amount: 14990, status: "sent", dueDate: "2026-07-10", issuedAt: "2026-06-25" },
-  { id: "inv-2", folio: "F-2026-000124", client: "Hospital Central", concept: "Google Workspace implementación", amount: 3490, status: "paid", dueDate: "2026-06-28", issuedAt: "2026-06-20" },
-  { id: "inv-3", folio: "F-2026-000125", client: "Nova Farma", concept: "Ecommerce crecimiento", amount: 39990, status: "draft", dueDate: "2026-07-20", issuedAt: "2026-06-30" },
-  { id: "inv-4", folio: "F-2026-000126", client: "Laboratorio Clínico", concept: "Administración DNS", amount: 690, status: "overdue", dueDate: "2026-06-15", issuedAt: "2026-06-01" },
-  { id: "inv-5", folio: "F-2026-000127", client: "Dermatología & Belleza", concept: "GiovSoft 360 mensualidad", amount: 12490, status: "sent", dueDate: "2026-07-05", issuedAt: "2026-06-29" },
-];
-
-const recurringSeed: RecurringPayment[] = [
-  { id: "rec-pay-1", client: "Dermatología & Belleza", service: "GiovSoft 360", plan: "Profesional", amount: 12490, frequency: "Mensual", paymentDay: 5, nextCharge: "2026-07-05", method: "Transferencia", status: "active", owner: "María Fernanda López" },
-  { id: "rec-pay-2", client: "Clínica Valle del Sol", service: "Mantenimiento web", plan: "Profesional", amount: 1890, frequency: "Mensual", paymentDay: 10, nextCharge: "2026-07-10", method: "Tarjeta", status: "active", owner: "Ana Sofía Martínez" },
-  { id: "rec-pay-3", client: "Hospital Central", service: "Google Workspace", plan: "Licencias", amount: 7800, frequency: "Mensual", paymentDay: 1, nextCharge: "2026-07-01", method: "Transferencia", status: "overdue", owner: "Jorge Ramírez" },
-  { id: "rec-pay-4", client: "OptiSalud", service: "Correos corporativos", plan: "Cuenta adicional", amount: 390, frequency: "Mensual", paymentDay: 15, nextCharge: "2026-07-15", method: "Efectivo", status: "paused", owner: "Lucía Gómez" },
-];
-
-const collectionsSeed: CollectionItem[] = [
-  { id: "col-1", client: "Hospital Central", concept: "Google Workspace mensualidad", expectedAmount: 7800, paidAmount: 0, dueDate: "2026-07-01", lastContact: "2026-06-28", nextFollowUp: "2026-07-02", status: "overdue", notes: "Solicitar comprobante de transferencia." },
-  { id: "col-2", client: "Clínica Valle del Sol", concept: "Mantenimiento web", expectedAmount: 1890, paidAmount: 0, dueDate: "2026-07-10", lastContact: "2026-06-29", nextFollowUp: "2026-07-08", status: "pending", notes: "Recordatorio previo al vencimiento." },
-  { id: "col-3", client: "Nova Farma", concept: "Ecommerce crecimiento", expectedAmount: 39990, paidAmount: 19990, dueDate: "2026-07-20", lastContact: "2026-06-30", nextFollowUp: "2026-07-05", status: "partial", notes: "Pago parcial recibido, falta complemento." },
-  { id: "col-4", client: "Hospital Central", concept: "Implementación Google Workspace", expectedAmount: 3490, paidAmount: 3490, dueDate: "2026-06-28", lastContact: "2026-06-28", nextFollowUp: "2026-07-28", status: "paid", notes: "Pagado y comprobante validado." },
-];
+const invoicesSeed: InvoiceItem[] = [];
+const recurringSeed: RecurringPayment[] = [];
+const collectionsSeed: CollectionItem[] = [];
 
 const statusLabels: Record<InvoiceStatus, string> = {
   draft: "Borrador",

@@ -13,14 +13,7 @@ interface AuditEvent {
   ip: string;
 }
 
-const auditSeed: AuditEvent[] = [
-  { id: "audit-1", date: "2026-06-30 17:28", user: "Master GiovSoft", module: "Usuarios", action: "Inicio de sesión administrativo", level: "success", ip: "127.0.0.1" },
-  { id: "audit-2", date: "2026-06-30 16:42", user: "Giovanni Ramos", module: "Clientes", action: "Actualizó información fiscal de cliente", level: "info", ip: "10.10.10.130" },
-  { id: "audit-3", date: "2026-06-30 15:35", user: "Ana Sofía Martínez", module: "Tickets", action: "Marcó ticket urgente como resuelto", level: "success", ip: "10.10.10.130" },
-  { id: "audit-4", date: "2026-06-30 14:18", user: "Sistema", module: "Facturación", action: "Detectó pago recurrente vencido", level: "warning", ip: "system" },
-  { id: "audit-5", date: "2026-06-30 13:51", user: "Sistema", module: "Integraciones", action: "Error de validación en llave API", level: "critical", ip: "system" },
-  { id: "audit-6", date: "2026-06-29 22:10", user: "Jorge Ramírez", module: "Proyectos", action: "Agregó entregable y archivo PDF", level: "info", ip: "10.10.10.130" },
-];
+const auditSeed: AuditEvent[] = [];
 
 const levelLabels: Record<AuditLevel, string> = {
   info: "Informativo",
