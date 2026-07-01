@@ -29,6 +29,9 @@ const masterAdminName = process.env.MASTER_ADMIN_NAME || "Master GiovSoft";
 const temporaryAdminPassword = "123456";
 const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || "giovsoft-local-admin-secret";
 const adminTokenTtlMs = Number(process.env.ADMIN_TOKEN_TTL_HOURS || 12) * 60 * 60 * 1000;
+const adminTwoFactorEnabled = process.env.ADMIN_2FA_ENABLED !== "false";
+const twoFactorCodeTtlMs = Number(process.env.ADMIN_2FA_CODE_TTL_MINUTES || 10) * 60 * 1000;
+const twoFactorMaxAttempts = Number(process.env.ADMIN_2FA_MAX_ATTEMPTS || 5);
 const genericPublicRfc = "XAXX010101000";
 const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 const cloudSqlHost = process.env.CLOUD_SQL_CONNECTION_NAME
@@ -45,6 +48,7 @@ const postgresConfigured = Boolean(
 const dataStore = postgresConfigured ? "PostgreSQL" : "JSON local";
 let pool;
 let databaseReady = false;
+const twoFactorChallenges = new Map();
 
 const serviceDetails = {
   "GiovSoft 360": {
@@ -132,6 +136,86 @@ function verifyPassword(password, passwordHash) {
   const storedBuffer = Buffer.from(storedHash || "");
 
   return incomingBuffer.length === storedBuffer.length && crypto.timingSafeEqual(incomingBuffer, storedBuffer);
+}
+
+function createTwoFactorCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashTwoFactorCode(challengeId, code) {
+  return crypto.createHmac("sha256", adminTokenSecret).update(`${challengeId}:${code}`).digest("base64url");
+}
+
+function maskEmail(email) {
+  const [name = "", domain = ""] = String(email || "").split("@");
+  if (!name || !domain) {
+    return email;
+  }
+
+  const visible = name.slice(0, Math.min(2, name.length));
+  return `${visible}${"*".repeat(Math.max(2, name.length - visible.length))}@${domain}`;
+}
+
+function cleanupTwoFactorChallenges() {
+  const now = Date.now();
+
+  for (const [challengeId, challenge] of twoFactorChallenges.entries()) {
+    if (challenge.expiresAt <= now || challenge.attempts >= twoFactorMaxAttempts) {
+      twoFactorChallenges.delete(challengeId);
+    }
+  }
+}
+
+function createTwoFactorChallenge(user) {
+  cleanupTwoFactorChallenges();
+
+  const challengeId = crypto.randomUUID();
+  const code = createTwoFactorCode();
+  const expiresAt = Date.now() + twoFactorCodeTtlMs;
+
+  twoFactorChallenges.set(challengeId, {
+    attempts: 0,
+    codeHash: hashTwoFactorCode(challengeId, code),
+    email: user.email,
+    expiresAt,
+    userId: user.id,
+  });
+
+  return { challengeId, code, expiresAt };
+}
+
+function verifyTwoFactorChallenge(challengeId, code) {
+  cleanupTwoFactorChallenges();
+
+  const challenge = twoFactorChallenges.get(challengeId);
+
+  if (!challenge) {
+    return { ok: false, message: "El código expiró o no existe. Solicita uno nuevo." };
+  }
+
+  challenge.attempts += 1;
+
+  if (challenge.attempts > twoFactorMaxAttempts) {
+    twoFactorChallenges.delete(challengeId);
+    return { ok: false, message: "Demasiados intentos. Vuelve a iniciar sesión." };
+  }
+
+  if (challenge.expiresAt <= Date.now()) {
+    twoFactorChallenges.delete(challengeId);
+    return { ok: false, message: "El código expiró. Vuelve a iniciar sesión." };
+  }
+
+  const incomingHash = hashTwoFactorCode(challengeId, sanitizeText(code));
+  const incomingBuffer = Buffer.from(incomingHash);
+  const storedBuffer = Buffer.from(challenge.codeHash);
+  const matches = incomingBuffer.length === storedBuffer.length && crypto.timingSafeEqual(incomingBuffer, storedBuffer);
+
+  if (!matches) {
+    return { ok: false, message: "Código de verificación incorrecto." };
+  }
+
+  twoFactorChallenges.delete(challengeId);
+  return { ok: true, userId: challenge.userId };
 }
 
 function publicAdminUser(user) {
@@ -227,6 +311,22 @@ function createTransporter() {
       pass: process.env.SMTP_PASS,
     },
   });
+}
+
+async function getLogoAttachments() {
+  try {
+    await fs.access(logoPath);
+    return [
+      {
+        filename: "giovsoft-logo.svg",
+        path: logoPath,
+        cid: "giovsoft-logo",
+        contentType: "image/svg+xml",
+      },
+    ];
+  } catch (_error) {
+    return [];
+  }
 }
 
 function getServiceDetail(service) {
@@ -399,6 +499,68 @@ function buildAdminEmail(request) {
   };
 }
 
+function buildTwoFactorEmail({ user, code, expiresAt }) {
+  const expiresAtLabel = new Date(expiresAt).toLocaleString("es-MX", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  return {
+    subject: "Código de verificación GiovSoft",
+    text: [
+      `Hola ${user.name},`,
+      "",
+      "Usa este código para completar tu inicio de sesión en el panel administrativo de GiovSoft:",
+      "",
+      code,
+      "",
+      `Este código vence el ${expiresAtLabel}.`,
+      "Si no intentaste iniciar sesión, ignora este correo y revisa tu cuenta.",
+      "",
+      "GiovSoft",
+    ].join("\n"),
+    html: buildEmailLayout({
+      title: "Verificación de acceso",
+      preheader: "Tu código de seguridad para entrar al panel GiovSoft.",
+      badge: "Código 2FA",
+      intro:
+        "Recibimos un intento de inicio de sesión en el panel administrativo. Ingresa el siguiente código para confirmar que eres tú.",
+      summaryRows: [
+        { label: "Usuario", value: user.name },
+        { label: "Correo", value: user.email },
+        { label: "Código", value: code },
+        { label: "Vence", value: expiresAtLabel },
+      ],
+      ctaLabel: "",
+      ctaUrl: "",
+      footerNote: "Por seguridad, este código solo se puede usar una vez. Si no reconoces este acceso, cambia tu contraseña.",
+    }),
+  };
+}
+
+async function sendTwoFactorEmail(user, code, expiresAt) {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    return { status: "skipped", reason: "SMTP no configurado" };
+  }
+
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const email = buildTwoFactorEmail({ code, expiresAt, user });
+  const attachments = await getLogoAttachments();
+
+  await transporter.sendMail({
+    attachments,
+    from,
+    html: email.html,
+    subject: email.subject,
+    text: email.text,
+    to: user.email,
+  });
+
+  return { status: "sent", sentAt: new Date().toISOString() };
+}
+
 async function sendContactEmails(request) {
   const transporter = createTransporter();
 
@@ -409,38 +571,25 @@ async function sendContactEmails(request) {
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
   const clientEmail = buildClientEmail(request);
   const adminNotification = buildAdminEmail(request);
+  const attachments = await getLogoAttachments();
 
   await Promise.all([
     transporter.sendMail({
+      attachments,
       from,
       to: request.email,
       subject: clientEmail.subject,
       text: clientEmail.text,
       html: clientEmail.html,
-      attachments: [
-        {
-          filename: "giovsoft-logo.svg",
-          path: logoPath,
-          cid: "giovsoft-logo",
-          contentType: "image/svg+xml",
-        },
-      ],
     }),
     transporter.sendMail({
+      attachments,
       from,
       to: adminEmail,
       replyTo: request.email,
       subject: adminNotification.subject,
       text: adminNotification.text,
       html: adminNotification.html,
-      attachments: [
-        {
-          filename: "giovsoft-logo.svg",
-          path: logoPath,
-          cid: "giovsoft-logo",
-          contentType: "image/svg+xml",
-        },
-      ],
     }),
   ]);
 
@@ -1092,6 +1241,29 @@ app.post("/api/admin/login", async (req, res, next) => {
       return res.status(401).json({ message: "Correo o contraseña incorrectos." });
     }
 
+    if (adminTwoFactorEnabled) {
+      const { challengeId, code, expiresAt } = createTwoFactorChallenge(user);
+      const emailResult = await sendTwoFactorEmail(user, code, expiresAt);
+
+      if (emailResult.status !== "sent") {
+        twoFactorChallenges.delete(challengeId);
+        return res.status(503).json({
+          message: "No se pudo enviar el código 2FA. Revisa la configuración SMTP del servidor.",
+        });
+      }
+
+      return res.json({
+        challengeId,
+        emailHint: maskEmail(user.email),
+        expiresAt,
+        methods: {
+          email: true,
+          passkey: Boolean(user.passkeys?.length),
+        },
+        requiresTwoFactor: true,
+      });
+    }
+
     const updatedUser = {
       ...user,
       lastLoginAt: new Date().toISOString(),
@@ -1108,6 +1280,53 @@ app.post("/api/admin/login", async (req, res, next) => {
   } catch (error) {
     return next(error);
   }
+});
+
+app.post("/api/admin/login/2fa", async (req, res, next) => {
+  try {
+    const challengeId = sanitizeText(req.body?.challengeId);
+    const code = sanitizeText(req.body?.code).replace(/\D/g, "");
+
+    if (!challengeId || !code) {
+      return res.status(400).json({ message: "Código de verificación requerido." });
+    }
+
+    const challengeResult = verifyTwoFactorChallenge(challengeId, code);
+
+    if (!challengeResult.ok) {
+      return res.status(401).json({ message: challengeResult.message });
+    }
+
+    const users = await readAdminUsers();
+    const userIndex = users.findIndex((item) => item.id === challengeResult.userId && item.status === "active");
+    const user = users[userIndex];
+
+    if (!user) {
+      return res.status(401).json({ message: "Usuario administrativo no disponible." });
+    }
+
+    const updatedUser = {
+      ...user,
+      lastLoginAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    users[userIndex] = updatedUser;
+    await writeAdminUsers(users);
+
+    return res.json({
+      token: createAdminToken(updatedUser),
+      user: publicAdminUser(updatedUser),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/login/passkey/start", (_req, res) => {
+  return res.status(501).json({
+    message: "Las llaves de seguridad y llavero de iCloud requieren registrar una passkey desde el perfil del usuario.",
+  });
 });
 
 app.use("/api/admin", requireAdminAuth);

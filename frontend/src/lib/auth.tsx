@@ -11,13 +11,22 @@ import {
 
 interface LoginResult {
   ok: boolean;
+  challengeId?: string;
+  emailHint?: string;
+  expiresAt?: number;
   message?: string;
+  methods?: {
+    email: boolean;
+    passkey: boolean;
+  };
+  requiresTwoFactor?: boolean;
 }
 
 interface AuthContextValue {
   isAuthenticated: boolean;
   user: AdminUser | null;
   login: (email: string, password: string) => Promise<LoginResult>;
+  verifyTwoFactor: (challengeId: string, code: string) => Promise<LoginResult>;
   changePassword: (newPassword: string, currentPassword?: string) => Promise<LoginResult>;
   logout: () => void;
 }
@@ -34,7 +43,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       async login(email, password) {
         try {
-          const response = await api.post<{ token: string; user: AdminUser }>("/api/admin/login", { email, password });
+          const response = await api.post<
+            | { token: string; user: AdminUser }
+            | {
+                challengeId: string;
+                emailHint: string;
+                expiresAt: number;
+                methods: { email: boolean; passkey: boolean };
+                requiresTwoFactor: true;
+              }
+          >("/api/admin/login", { email, password });
+
+          if ("requiresTwoFactor" in response.data && response.data.requiresTwoFactor) {
+            return {
+              challengeId: response.data.challengeId,
+              emailHint: response.data.emailHint,
+              expiresAt: response.data.expiresAt,
+              methods: response.data.methods,
+              ok: false,
+              requiresTwoFactor: true,
+            };
+          }
+
+          const session = response.data;
+
+          if (!("token" in session)) {
+            return { ok: false, message: "Respuesta de autenticación inválida." };
+          }
+
+          setAdminSession(session.token, session.user);
+          setToken(session.token);
+          setUser(session.user);
+
+          return { ok: true };
+        } catch (error) {
+          if (error && typeof error === "object" && "response" in error) {
+            const response = (error as { response?: { data?: { message?: string } } }).response;
+            return { ok: false, message: response?.data?.message || "No se pudo iniciar sesión." };
+          }
+
+          return { ok: false, message: "No se pudo conectar con el servidor." };
+        }
+      },
+      async verifyTwoFactor(challengeId, code) {
+        try {
+          const response = await api.post<{ token: string; user: AdminUser }>("/api/admin/login/2fa", { challengeId, code });
 
           setAdminSession(response.data.token, response.data.user);
           setToken(response.data.token);
@@ -44,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (error) {
           if (error && typeof error === "object" && "response" in error) {
             const response = (error as { response?: { data?: { message?: string } } }).response;
-            return { ok: false, message: response?.data?.message || "No se pudo iniciar sesión." };
+            return { ok: false, message: response?.data?.message || "No se pudo verificar el código." };
           }
 
           return { ok: false, message: "No se pudo conectar con el servidor." };
