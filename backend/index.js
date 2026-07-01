@@ -715,6 +715,316 @@ async function ensureDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_clients_business_name
       ON clients (business_name);
+
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL DEFAULT 'Administrador',
+      status TEXT NOT NULL DEFAULT 'active',
+      password_hash TEXT NOT NULL,
+      password_change_required BOOLEAN NOT NULL DEFAULT TRUE,
+      is_master BOOLEAN NOT NULL DEFAULT FALSE,
+      passkeys JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_login_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_users_email
+      ON admin_users (email);
+
+    CREATE INDEX IF NOT EXISTS idx_admin_users_status
+      ON admin_users (status);
+
+    CREATE TABLE IF NOT EXISTS companies (
+      id UUID PRIMARY KEY,
+      commercial_name TEXT NOT NULL,
+      legal_name TEXT,
+      rfc TEXT,
+      industry TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      plan TEXT,
+      contact_name TEXT,
+      contact_role TEXT,
+      email TEXT,
+      phone TEXT,
+      website TEXT,
+      city TEXT,
+      state TEXT,
+      address TEXT,
+      employees TEXT,
+      notes TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_companies_status
+      ON companies (status);
+
+    CREATE TABLE IF NOT EXISTS roles (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      scope TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      is_system BOOLEAN NOT NULL DEFAULT FALSE,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      id UUID PRIMARY KEY,
+      role_id UUID NOT NULL REFERENCES roles (id) ON DELETE CASCADE,
+      module_key TEXT NOT NULL,
+      actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (role_id, module_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS services (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      category TEXT,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      variable_pricing BOOLEAN NOT NULL DEFAULT FALSE,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS service_plans (
+      id UUID PRIMARY KEY,
+      service_id UUID NOT NULL REFERENCES services (id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      price_mode TEXT NOT NULL DEFAULT 'fixed',
+      price NUMERIC(12,2) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      billing_cycle TEXT NOT NULL DEFAULT 'Mensual',
+      status TEXT NOT NULL DEFAULT 'active',
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_service_plans_service_id
+      ON service_plans (service_id);
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id UUID PRIMARY KEY,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      client_name TEXT,
+      service TEXT,
+      manager TEXT,
+      status TEXT NOT NULL DEFAULT 'planning',
+      due_date DATE,
+      budget TEXT,
+      progress INTEGER NOT NULL DEFAULT 0,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_projects_status
+      ON projects (status);
+
+    CREATE TABLE IF NOT EXISTS project_deliverables (
+      id UUID PRIMARY KEY,
+      project_id UUID NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      owner TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      due_date DATE,
+      notes TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS project_comments (
+      id UUID PRIMARY KEY,
+      project_id UUID NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+      author TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS project_attachments (
+      id UUID PRIMARY KEY,
+      project_id UUID NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      file_type TEXT,
+      file_kind TEXT,
+      file_url TEXT,
+      uploaded_by TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS invoices (
+      id UUID PRIMARY KEY,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      folio TEXT NOT NULL UNIQUE,
+      client_name TEXT,
+      concept TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      status TEXT NOT NULL DEFAULT 'draft',
+      issued_at DATE,
+      due_date DATE,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_invoices_status
+      ON invoices (status);
+
+    CREATE TABLE IF NOT EXISTS recurring_payments (
+      id UUID PRIMARY KEY,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      client_name TEXT,
+      service TEXT,
+      plan TEXT,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      frequency TEXT NOT NULL DEFAULT 'Mensual',
+      payment_day INTEGER,
+      next_charge DATE,
+      payment_method TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      owner TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS collections (
+      id UUID PRIMARY KEY,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      client_name TEXT,
+      concept TEXT NOT NULL,
+      expected_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      paid_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      due_date DATE,
+      last_contact DATE,
+      next_follow_up DATE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS receipts (
+      id UUID PRIMARY KEY,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      folio TEXT,
+      client_name TEXT,
+      receipt_type TEXT,
+      file_name TEXT,
+      file_url TEXT,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      status TEXT NOT NULL DEFAULT 'pending',
+      uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS tickets (
+      id UUID PRIMARY KEY,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      folio TEXT NOT NULL UNIQUE,
+      client_name TEXT,
+      subject TEXT NOT NULL,
+      channel TEXT,
+      priority TEXT NOT NULL DEFAULT 'medium',
+      status TEXT NOT NULL DEFAULT 'open',
+      owner TEXT,
+      sla_due TEXT,
+      last_update TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS support_cases (
+      id UUID PRIMARY KEY,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      client_name TEXT,
+      topic TEXT NOT NULL,
+      owner TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      sla TEXT,
+      channel TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS support_comments (
+      id UUID PRIMARY KEY,
+      support_case_id UUID NOT NULL REFERENCES support_cases (id) ON DELETE CASCADE,
+      author TEXT,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS integrations (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT,
+      status TEXT NOT NULL DEFAULT 'disabled',
+      last_sync TEXT,
+      config JSONB NOT NULL DEFAULT '{}'::jsonb,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id UUID PRIMARY KEY,
+      user_id UUID REFERENCES admin_users (id) ON DELETE SET NULL,
+      user_name TEXT,
+      module TEXT NOT NULL,
+      action TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'info',
+      ip TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_events_created_at
+      ON audit_events (created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS reports (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      report_type TEXT NOT NULL,
+      description TEXT,
+      parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
+      generated_by UUID REFERENCES admin_users (id) ON DELETE SET NULL,
+      generated_at TIMESTAMPTZ,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_by UUID REFERENCES admin_users (id) ON DELETE SET NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   databaseReady = true;
@@ -771,6 +1081,23 @@ function mapClientRow(row) {
     activity: safeArray(row.activity),
     createdAt: toIsoDate(row.created_at),
     updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
+function mapAdminUserRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    passwordHash: row.password_hash,
+    passwordChangeRequired: Boolean(row.password_change_required),
+    isMaster: Boolean(row.is_master),
+    passkeys: safeArray(row.passkeys),
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+    lastLoginAt: toIsoDate(row.last_login_at),
   };
 }
 
@@ -928,6 +1255,21 @@ async function ensureMasterAdminUser(users) {
 }
 
 async function readAdminUsers() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const { rows } = await currentPool.query("SELECT * FROM admin_users ORDER BY created_at DESC");
+    const users = rows.map(mapAdminUserRow);
+    const usersWithMaster = await ensureMasterAdminUser(users);
+
+    if (usersWithMaster.length !== users.length || usersWithMaster.some((user, index) => user !== users[index])) {
+      await writeAdminUsers(usersWithMaster);
+    }
+
+    return usersWithMaster;
+  }
+
   await ensureAdminUsersFile();
   const raw = await fs.readFile(adminUsersFile, "utf8");
   const users = JSON.parse(raw);
@@ -941,6 +1283,73 @@ async function readAdminUsers() {
 }
 
 async function writeAdminUsers(users) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+
+    const client = await currentPool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const ids = users.map((user) => user.id);
+
+      if (ids.length > 0) {
+        await client.query("DELETE FROM admin_users WHERE id <> ALL($1::uuid[])", [ids]);
+      } else {
+        await client.query("DELETE FROM admin_users");
+      }
+
+      for (const user of users) {
+        await client.query(
+          `
+            INSERT INTO admin_users (
+              id, name, email, role, status, password_hash, password_change_required,
+              is_master, passkeys, created_at, updated_at, last_login_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              email = EXCLUDED.email,
+              role = EXCLUDED.role,
+              status = EXCLUDED.status,
+              password_hash = EXCLUDED.password_hash,
+              password_change_required = EXCLUDED.password_change_required,
+              is_master = EXCLUDED.is_master,
+              passkeys = EXCLUDED.passkeys,
+              created_at = EXCLUDED.created_at,
+              updated_at = EXCLUDED.updated_at,
+              last_login_at = EXCLUDED.last_login_at
+          `,
+          [
+            user.id,
+            user.name,
+            user.email,
+            user.role || "Administrador",
+            user.status || "active",
+            user.passwordHash,
+            Boolean(user.passwordChangeRequired),
+            Boolean(user.isMaster),
+            JSON.stringify(safeArray(user.passkeys)),
+            user.createdAt || new Date().toISOString(),
+            user.updatedAt || new Date().toISOString(),
+            user.lastLoginAt || null,
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return;
+  }
+
   await ensureAdminUsersFile();
   await fs.writeFile(adminUsersFile, JSON.stringify(users, null, 2), "utf8");
 }
