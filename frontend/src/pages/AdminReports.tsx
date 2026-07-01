@@ -1,6 +1,27 @@
-import { BarChart3 } from "lucide-react";
+import { BarChart3, CalendarDays, Download, FileBarChart, LineChart, PieChart, TrendingUp, WalletCards } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { getAdminRequests, type ContactRequest } from "../lib/adminRequests";
+
+const monthlyRevenue = [
+  { month: "Ene", value: 62000 },
+  { month: "Feb", value: 72000 },
+  { month: "Mar", value: 94000 },
+  { month: "Abr", value: 102000 },
+  { month: "May", value: 136000 },
+  { month: "Jun", value: 126000 },
+];
+
+const reportCards = [
+  { id: "sales", title: "Ventas y leads", description: "Solicitudes, conversión y fuentes de contacto.", updatedAt: "Hoy, 10:45 AM" },
+  { id: "billing", title: "Facturación", description: "Facturas, pagos recurrentes y cobranza.", updatedAt: "Hoy, 09:30 AM" },
+  { id: "projects", title: "Proyectos", description: "Avance, entregables y responsables.", updatedAt: "Ayer, 06:15 PM" },
+  { id: "support", title: "Soporte", description: "Tickets, SLA y carga por canal.", updatedAt: "Ayer, 04:40 PM" },
+];
+
+function money(value: number) {
+  return new Intl.NumberFormat("es-MX", { currency: "MXN", maximumFractionDigits: 0, style: "currency" }).format(value);
+}
 
 export default function AdminReports() {
   const [requests, setRequests] = useState<ContactRequest[]>([]);
@@ -11,8 +32,9 @@ export default function AdminReports() {
     const lost = requests.filter((request) => request.status === "lost").length;
     const sentEmails = requests.filter((request) => request.emailStatus === "sent").length;
     const conversion = total ? Math.round((converted / total) * 100) : 0;
+    const revenue = monthlyRevenue.reduce((sum, item) => sum + item.value, 0);
 
-    return { total, active, converted, lost, sentEmails, conversion };
+    return { total, active, converted, lost, sentEmails, conversion, revenue };
   }, [requests]);
 
   useEffect(() => {
@@ -20,51 +42,64 @@ export default function AdminReports() {
   }, []);
 
   return (
-    <div className="admin-module-shell">
-      <section className="requests-toolbar surface-card">
+    <section className="reports-module-shell">
+      <div className="clients-page-head">
         <div>
-          <p className="eyebrow">Reportes</p>
-          <h2>Rendimiento comercial</h2>
-          <span>Lectura rápida de solicitudes y conversión</span>
+          <h2>Reportes</h2>
+          <p>Consulta indicadores comerciales, facturación, proyectos y soporte.</p>
         </div>
-      </section>
+        <div className="clients-head-actions">
+          <button className="clients-primary-action" type="button"><Download size={20} /> Exportar reporte</button>
+        </div>
+      </div>
 
-      <section className="stats-grid">
-        <article className="metric-card">
-          <p>Total solicitudes</p>
-          <div className="metric-row">
-            <h3>{report.total}</h3>
-            <span className="metric-change is-neutral">histórico</span>
-          </div>
-        </article>
-        <article className="metric-card">
-          <p>Leads activos</p>
-          <div className="metric-row">
-            <h3>{report.active}</h3>
-            <span className="metric-change is-positive">seguimiento</span>
-          </div>
-        </article>
-        <article className="metric-card">
-          <p>Conversión</p>
-          <div className="metric-row">
-            <h3>{report.conversion}%</h3>
-            <span className="metric-change is-positive">{report.converted} clientes</span>
-          </div>
-        </article>
-        <article className="metric-card">
-          <p>Correos enviados</p>
-          <div className="metric-row">
-            <h3>{report.sentEmails}</h3>
-            <span className="metric-change is-neutral">SMTP</span>
-          </div>
-        </article>
-      </section>
+      <div className="clients-stats-grid">
+        <article className="clients-stat-card"><span className="clients-stat-icon is-blue"><FileBarChart size={27} /></span><div><p>Solicitudes</p><h3>{report.total}</h3><small>{report.active} leads activos</small></div></article>
+        <article className="clients-stat-card"><span className="clients-stat-icon is-green"><TrendingUp size={27} /></span><div><p>Conversión</p><h3>{report.conversion}%</h3><small>{report.converted} clientes ganados</small></div></article>
+        <article className="clients-stat-card"><span className="clients-stat-icon is-purple"><WalletCards size={27} /></span><div><p>Ingresos 6 meses</p><h3>{money(report.revenue)}</h3><small>MXN acumulado</small></div></article>
+        <article className="clients-stat-card"><span className="clients-stat-icon is-orange"><CalendarDays size={27} /></span><div><p>Correos enviados</p><h3>{report.sentEmails}</h3><small>{report.lost} solicitudes perdidas</small></div></article>
+      </div>
 
-      <section className="surface-card report-panel">
-        <BarChart3 size={22} />
-        <h3>Resumen</h3>
-        <p>{report.lost} solicitudes perdidas y {report.converted} convertidas. Usa el módulo de seguimiento para mover leads activos.</p>
-      </section>
-    </div>
+      <div className="reports-grid">
+        <article className="reports-panel reports-chart-panel">
+          <header><div><h3>Ingresos en los últimos 6 meses</h3><p>Resumen visual de facturación mensual.</p></div><LineChart size={21} /></header>
+          <div className="reports-bars">
+            {monthlyRevenue.map((item) => (
+              <span key={item.month} style={{ "--bar-height": `${Math.max(20, item.value / 1500)}%` } as CSSProperties}>
+                <i />
+                <small>{item.month}</small>
+              </span>
+            ))}
+          </div>
+        </article>
+
+        <article className="reports-panel">
+          <header><div><h3>Distribución operativa</h3><p>Lectura rápida por área de trabajo.</p></div><PieChart size={21} /></header>
+          <div className="reports-distribution">
+            <p><span className="is-blue" /> Ventas <strong>36%</strong></p>
+            <p><span className="is-green" /> Proyectos <strong>28%</strong></p>
+            <p><span className="is-purple" /> Soporte <strong>22%</strong></p>
+            <p><span className="is-orange" /> Facturación <strong>14%</strong></p>
+          </div>
+        </article>
+
+        <article className="reports-panel reports-wide">
+          <header><div><h3>Reportes disponibles</h3><p>Plantillas preparadas para revisión o exportación.</p></div><BarChart3 size={21} /></header>
+          <div className="reports-card-grid">
+            {reportCards.map((card) => (
+              <section className="reports-card" key={card.id}>
+                <FileBarChart size={22} />
+                <div>
+                  <strong>{card.title}</strong>
+                  <span>{card.description}</span>
+                  <small>Actualizado {card.updatedAt}</small>
+                </div>
+                <button type="button"><Download size={16} /> Descargar</button>
+              </section>
+            ))}
+          </div>
+        </article>
+      </div>
+    </section>
   );
 }

@@ -1,13 +1,28 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
+import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
+import AdminAudit from "./pages/AdminAudit";
 import AdminClients from "./pages/AdminClients";
+import AdminCompanies from "./pages/AdminCompanies";
 import AdminFollowups from "./pages/AdminFollowups";
+import AdminPlaceholder from "./pages/AdminPlaceholder";
+import AdminBilling from "./pages/AdminBilling";
+import AdminIntegrations from "./pages/AdminIntegrations";
+import AdminProfile from "./pages/AdminProfile";
+import AdminProjects from "./pages/AdminProjects";
+import AdminReceipts from "./pages/AdminReceipts";
 import AdminRequests from "./pages/AdminRequests";
+import AdminRoles from "./pages/AdminRoles";
 import AdminReports from "./pages/AdminReports";
 import AdminServices from "./pages/AdminServices";
 import AdminSettings from "./pages/AdminSettings";
+import AdminSupport from "./pages/AdminSupport";
+import AdminTickets from "./pages/AdminTickets";
+import AdminUsers from "./pages/AdminUsers";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
 import ContactPage from "./pages/ContactPage";
 import Dashboard from "./pages/Dashboard";
+import LoginPage from "./pages/LoginPage";
 import ServicePage from "./pages/ServicePage";
 import Website from "./pages/Website";
 
@@ -19,62 +34,215 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={isAdminHost ? <Navigate to="/admin" replace /> : <Website />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route path="/contacto" element={<ContactPage />} />
         <Route path="/servicios/:slug" element={<ServicePage />} />
         <Route
+          path="/admin/restablecer-contrasena"
+          element={
+            <ProtectedAdminRoute>
+              <ChangePasswordPage />
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
           path="/admin"
           element={
-            <Layout>
-              <Dashboard />
-            </Layout>
+            <ProtectedAdminRoute>
+              <Layout>
+                <Dashboard />
+              </Layout>
+            </ProtectedAdminRoute>
           }
         />
         <Route
           path="/admin/solicitudes"
           element={
-            <Layout>
-              <AdminRequests />
-            </Layout>
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminRequests />
+              </Layout>
+            </ProtectedAdminRoute>
           }
         />
         <Route
           path="/admin/clientes"
           element={
-            <Layout>
-              <AdminClients />
-            </Layout>
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminClients />
+              </Layout>
+            </ProtectedAdminRoute>
           }
         />
         <Route
           path="/admin/seguimiento"
           element={
-            <Layout>
-              <AdminFollowups />
-            </Layout>
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminFollowups />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/empresas"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminCompanies />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/roles-permisos"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminRoles />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/productos"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminPlaceholder title="Productos" />
+              </Layout>
+            </ProtectedAdminRoute>
           }
         />
         <Route
           path="/admin/servicios"
           element={
-            <Layout>
-              <AdminServices />
-            </Layout>
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminServices />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/proyectos"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminProjects />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/planes"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminPlaceholder title="Planes" />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/facturacion"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminBilling />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/comprobantes"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminReceipts />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/tickets"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminTickets />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/soporte"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminSupport />
+              </Layout>
+            </ProtectedAdminRoute>
           }
         />
         <Route
           path="/admin/reportes"
           element={
-            <Layout>
-              <AdminReports />
-            </Layout>
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminReports />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/integraciones"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminIntegrations />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/auditoria"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminAudit />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/perfil"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminProfile />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/usuarios"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminUsers />
+              </Layout>
+            </ProtectedAdminRoute>
           }
         />
         <Route
           path="/admin/ajustes"
           element={
-            <Layout>
-              <AdminSettings />
-            </Layout>
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminSettings />
+              </Layout>
+            </ProtectedAdminRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

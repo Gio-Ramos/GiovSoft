@@ -90,7 +90,6 @@ export default function SiteFooter({ isDark }: SiteFooterProps) {
 
       <div className="footer-bottom">
         <span>© 2026 GiovSoft. Todos los derechos reservados.</span>
-        <a href="/admin">Acceso administrativo</a>
       </div>
     </footer>
   );

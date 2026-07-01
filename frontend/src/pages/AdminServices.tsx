@@ -1,56 +1,522 @@
-import { CheckCircle2, Sparkles } from "lucide-react";
+import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { getAdminRequests, type ContactRequest } from "../lib/adminRequests";
+import {
+  ChevronRight,
+  Edit3,
+  Filter,
+  Globe2,
+  Mail,
+  MonitorSmartphone,
+  MoreVertical,
+  PackageCheck,
+  Plus,
+  Save,
+  Search,
+  ServerCog,
+  ShoppingCart,
+  Sparkles,
+  ToggleLeft,
+} from "lucide-react";
 
-const serviceCatalog = ["GiovSoft 360", "Sitio web", "Ecommerce", "Dominios", "Correos corporativos", "Google Workspace"];
+type PriceMode = "fixed" | "variable";
+type BillingCycle = "Único" | "Mensual" | "Anual" | "Variable";
+
+interface ServicePlan {
+  id: string;
+  name: string;
+  description: string;
+  priceMode: PriceMode;
+  price: number;
+  currency: string;
+  billingCycle: BillingCycle;
+  status: "active" | "inactive";
+}
+
+interface ServiceItem {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  status: "active" | "inactive";
+  variablePricing: boolean;
+  plans: ServicePlan[];
+}
+
+interface PlanForm {
+  name: string;
+  description: string;
+  priceMode: PriceMode;
+  price: string;
+  currency: string;
+  billingCycle: BillingCycle;
+  status: "active" | "inactive";
+}
+
+const storageKey = "giovsoft-admin-services";
+
+const emptyPlanForm: PlanForm = {
+  name: "",
+  description: "",
+  priceMode: "fixed",
+  price: "",
+  currency: "MXN",
+  billingCycle: "Mensual",
+  status: "active",
+};
+
+const demoServices: ServiceItem[] = [
+  {
+    id: "srv-360",
+    name: "GiovSoft 360",
+    category: "Paquete integral",
+    description: "Acompañamiento integral para crear, conectar y mantener la base digital del negocio.",
+    status: "active",
+    variablePricing: false,
+    plans: [
+      { id: "plan-360-pro", name: "Profesional", description: "Sitio, dominio, correos y soporte base.", priceMode: "fixed", price: 12490, currency: "MXN", billingCycle: "Mensual", status: "active" },
+      { id: "plan-360-business", name: "Business", description: "Operación digital completa con prioridad.", priceMode: "fixed", price: 22490, currency: "MXN", billingCycle: "Mensual", status: "active" },
+    ],
+  },
+  {
+    id: "srv-web",
+    name: "Sitios web",
+    category: "Desarrollo web",
+    description: "Páginas modernas, rápidas y claras para presentar negocios y captar clientes.",
+    status: "active",
+    variablePricing: false,
+    plans: [
+      { id: "plan-web-basic", name: "Básico", description: "Sitio informativo de hasta 5 secciones.", priceMode: "fixed", price: 8990, currency: "MXN", billingCycle: "Único", status: "active" },
+      { id: "plan-web-pro", name: "Profesional", description: "Sitio corporativo con contenido ampliado.", priceMode: "fixed", price: 14990, currency: "MXN", billingCycle: "Único", status: "active" },
+      { id: "plan-web-care", name: "Mantenimiento", description: "Actualizaciones, respaldos y mejoras menores.", priceMode: "fixed", price: 1890, currency: "MXN", billingCycle: "Mensual", status: "active" },
+    ],
+  },
+  {
+    id: "srv-ecommerce",
+    name: "Ecommerce",
+    category: "Venta digital",
+    description: "Tiendas en línea con productos, pedidos, pagos y envíos.",
+    status: "active",
+    variablePricing: false,
+    plans: [
+      { id: "plan-ecom-start", name: "Inicial", description: "Catálogo, carrito y checkout base.", priceMode: "fixed", price: 24990, currency: "MXN", billingCycle: "Único", status: "active" },
+      { id: "plan-ecom-growth", name: "Crecimiento", description: "Pagos, envíos e integraciones comerciales.", priceMode: "fixed", price: 39990, currency: "MXN", billingCycle: "Único", status: "active" },
+    ],
+  },
+  {
+    id: "srv-domains",
+    name: "Dominios",
+    category: "Infraestructura",
+    description: "Registro, configuración DNS y administración de dominios.",
+    status: "active",
+    variablePricing: true,
+    plans: [
+      { id: "plan-domain-com", name: ".com / .com.mx", description: "El costo depende de disponibilidad, extensión y proveedor.", priceMode: "variable", price: 0, currency: "MXN", billingCycle: "Variable", status: "active" },
+      { id: "plan-domain-premium", name: "Dominio premium", description: "Valor sujeto a cotización del registrador.", priceMode: "variable", price: 0, currency: "MXN", billingCycle: "Variable", status: "active" },
+      { id: "plan-domain-admin", name: "Administración DNS", description: "Gestión y cambios DNS bajo demanda.", priceMode: "fixed", price: 690, currency: "MXN", billingCycle: "Único", status: "active" },
+    ],
+  },
+  {
+    id: "srv-mail",
+    name: "Correos corporativos",
+    category: "Comunicación",
+    description: "Cuentas profesionales con dominio propio, configuración y soporte.",
+    status: "active",
+    variablePricing: false,
+    plans: [
+      { id: "plan-mail-setup", name: "Configuración inicial", description: "Alta de dominio, registros y primera cuenta.", priceMode: "fixed", price: 1490, currency: "MXN", billingCycle: "Único", status: "active" },
+      { id: "plan-mail-account", name: "Cuenta adicional", description: "Configuración de cuenta por usuario.", priceMode: "fixed", price: 390, currency: "MXN", billingCycle: "Mensual", status: "active" },
+    ],
+  },
+  {
+    id: "srv-workspace",
+    name: "Google Workspace",
+    category: "Productividad",
+    description: "Gmail empresarial, Drive, Meet, Calendario y administración de usuarios.",
+    status: "active",
+    variablePricing: true,
+    plans: [
+      { id: "plan-ws-setup", name: "Implementación", description: "Configuración inicial y adopción del equipo.", priceMode: "fixed", price: 3490, currency: "MXN", billingCycle: "Único", status: "active" },
+      { id: "plan-ws-license", name: "Licencia por usuario", description: "Costo sujeto al plan contratado con Google.", priceMode: "variable", price: 0, currency: "MXN", billingCycle: "Variable", status: "active" },
+    ],
+  },
+];
+
+function serviceIcon(name: string) {
+  if (name.includes("Dominio")) return Globe2;
+  if (name.includes("Correo") || name.includes("Workspace")) return Mail;
+  if (name.includes("Ecommerce")) return ShoppingCart;
+  if (name.includes("Sitio")) return MonitorSmartphone;
+  if (name.includes("360")) return Sparkles;
+  return ServerCog;
+}
+
+function money(plan: ServicePlan) {
+  if (plan.priceMode === "variable") {
+    return "Variable";
+  }
+
+  return new Intl.NumberFormat("es-MX", {
+    currency: plan.currency,
+    maximumFractionDigits: 0,
+    style: "currency",
+  }).format(plan.price);
+}
 
 export default function AdminServices() {
-  const [requests, setRequests] = useState<ContactRequest[]>([]);
-  const services = useMemo(
-    () =>
-      serviceCatalog.map((service) => {
-        const serviceRequests = requests.filter((request) => request.service === service);
-        return {
-          service,
-          total: serviceRequests.length,
-          converted: serviceRequests.filter((request) => request.status === "converted").length,
-          active: serviceRequests.filter((request) => ["new", "contacted", "in_progress"].includes(request.status || "new")).length,
-        };
-      }),
-    [requests]
-  );
+  const [services, setServices] = useState<ServiceItem[]>(() => {
+    const stored = window.localStorage.getItem(storageKey);
+
+    if (!stored) {
+      return demoServices;
+    }
+
+    try {
+      return JSON.parse(stored) as ServiceItem[];
+    } catch (_error) {
+      return demoServices;
+    }
+  });
+  const [selectedServiceId, setSelectedServiceId] = useState(services[0]?.id || "");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
+  const [openMenu, setOpenMenu] = useState("");
+  const [showPlanForm, setShowPlanForm] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState("");
+  const [planForm, setPlanForm] = useState<PlanForm>(emptyPlanForm);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    getAdminRequests().then(setRequests).catch(() => setRequests([]));
-  }, []);
+    window.localStorage.setItem(storageKey, JSON.stringify(services));
+  }, [services]);
+
+  useEffect(() => {
+    if (!services.some((service) => service.id === selectedServiceId) && services[0]) {
+      setSelectedServiceId(services[0].id);
+    }
+  }, [selectedServiceId, services]);
+
+  const filteredServices = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return services.filter((service) => {
+      const matchesQuery =
+        !normalizedQuery || `${service.name} ${service.category} ${service.description}`.toLowerCase().includes(normalizedQuery);
+      const matchesStatus =
+        statusFilter === "Todos" ||
+        (statusFilter === "Activos" ? service.status === "active" : service.status === "inactive");
+
+      return matchesQuery && matchesStatus;
+    });
+  }, [query, services, statusFilter]);
+
+  const selectedService = services.find((service) => service.id === selectedServiceId) || services[0];
+  const totalPlans = services.reduce((total, service) => total + service.plans.length, 0);
+  const activeServices = services.filter((service) => service.status === "active").length;
+  const variableServices = services.filter((service) => service.variablePricing).length;
+  const activePlans = services.flatMap((service) => service.plans).filter((plan) => plan.status === "active").length;
+
+  function updatePlanForm(field: keyof PlanForm, value: string) {
+    setPlanForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === "priceMode" && value === "variable" ? { billingCycle: "Variable", price: "" } : {}),
+    }));
+  }
+
+  function openNewPlan() {
+    setEditingPlanId("");
+    setPlanForm({
+      ...emptyPlanForm,
+      priceMode: selectedService?.variablePricing ? "variable" : "fixed",
+      billingCycle: selectedService?.variablePricing ? "Variable" : "Mensual",
+    });
+    setMessage("");
+    setShowPlanForm(true);
+  }
+
+  function openEditPlan(plan: ServicePlan) {
+    setEditingPlanId(plan.id);
+    setPlanForm({
+      name: plan.name,
+      description: plan.description,
+      priceMode: plan.priceMode,
+      price: plan.price ? String(plan.price) : "",
+      currency: plan.currency,
+      billingCycle: plan.billingCycle,
+      status: plan.status,
+    });
+    setMessage("");
+    setOpenMenu("");
+    setShowPlanForm(true);
+  }
+
+  function savePlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedService || !planForm.name || !planForm.description) {
+      setMessage("Completa nombre y descripción del plan.");
+      return;
+    }
+
+    if (planForm.priceMode === "fixed" && !planForm.price) {
+      setMessage("Agrega el precio fijo del plan.");
+      return;
+    }
+
+    const nextPlan: ServicePlan = {
+      id: editingPlanId || crypto.randomUUID(),
+      name: planForm.name,
+      description: planForm.description,
+      priceMode: planForm.priceMode,
+      price: planForm.priceMode === "variable" ? 0 : Number(planForm.price),
+      currency: planForm.currency,
+      billingCycle: planForm.priceMode === "variable" ? "Variable" : planForm.billingCycle,
+      status: planForm.status,
+    };
+
+    setServices((current) =>
+      current.map((service) =>
+        service.id === selectedService.id
+          ? {
+              ...service,
+              plans: editingPlanId
+                ? service.plans.map((plan) => (plan.id === editingPlanId ? nextPlan : plan))
+                : [nextPlan, ...service.plans],
+              variablePricing: service.variablePricing || nextPlan.priceMode === "variable",
+            }
+          : service,
+      ),
+    );
+    setMessage(editingPlanId ? "Plan actualizado correctamente." : "Plan agregado correctamente.");
+    setShowPlanForm(false);
+    setEditingPlanId("");
+    setPlanForm(emptyPlanForm);
+  }
+
+  function toggleServiceStatus(service: ServiceItem) {
+    const nextStatus = service.status === "active" ? "inactive" : "active";
+    setServices((current) => current.map((item) => (item.id === service.id ? { ...item, status: nextStatus } : item)));
+    setMessage(`${service.name} ahora está ${nextStatus === "active" ? "activo" : "inactivo"}.`);
+  }
+
+  function togglePlanStatus(plan: ServicePlan) {
+    if (!selectedService) {
+      return;
+    }
+
+    const nextStatus = plan.status === "active" ? "inactive" : "active";
+    setServices((current) =>
+      current.map((service) =>
+        service.id === selectedService.id
+          ? {
+              ...service,
+              plans: service.plans.map((item) => (item.id === plan.id ? { ...item, status: nextStatus } : item)),
+            }
+          : service,
+      ),
+    );
+    setMessage(`${plan.name} ahora está ${nextStatus === "active" ? "activo" : "inactivo"}.`);
+    setOpenMenu("");
+  }
 
   return (
-    <div className="admin-module-shell">
-      <section className="requests-toolbar surface-card">
+    <section className="services-admin-shell">
+      <div className="clients-page-head">
         <div>
-          <p className="eyebrow">Servicios</p>
-          <h2>Catálogo comercial</h2>
-          <span>Demanda y conversión por servicio ofrecido</span>
+          <h2>Servicios</h2>
+          <p>Administra el catálogo comercial, planes y precios variables por servicio.</p>
         </div>
-      </section>
+        <div className="clients-head-actions">
+          <button className="clients-primary-action" onClick={openNewPlan} type="button">
+            <Plus size={20} />
+            Nuevo plan
+          </button>
+          <button className="clients-action-caret" type="button">
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
 
-      <section className="admin-card-grid">
-        {services.map((item) => (
-          <article className="surface-card admin-service-card" key={item.service}>
-            <Sparkles size={22} />
-            <h3>{item.service}</h3>
-            <p>Solicitudes: {item.total}</p>
-            <div className="service-mini-stats">
-              <span>{item.active} activas</span>
-              <span>{item.converted} clientes</span>
+      {message && <p className={message.includes("Completa") || message.includes("Agrega") ? "admin-form-error" : "admin-form-success"}>{message}</p>}
+
+      <div className="clients-stats-grid">
+        <article className="clients-stat-card">
+          <span className="clients-stat-icon is-blue"><PackageCheck size={27} /></span>
+          <div><p>Servicios totales</p><h3>{services.length}</h3><small>Catálogo disponible</small></div>
+        </article>
+        <article className="clients-stat-card">
+          <span className="clients-stat-icon is-green"><ToggleLeft size={27} /></span>
+          <div><p>Servicios activos</p><h3>{activeServices}</h3><small>Visibles para operación</small></div>
+        </article>
+        <article className="clients-stat-card">
+          <span className="clients-stat-icon is-purple"><Sparkles size={27} /></span>
+          <div><p>Planes activos</p><h3>{activePlans}</h3><small>De {totalPlans} planes</small></div>
+        </article>
+        <article className="clients-stat-card">
+          <span className="clients-stat-icon is-orange"><Globe2 size={27} /></span>
+          <div><p>Valor variable</p><h3>{variableServices}</h3><small>Dominios y licencias</small></div>
+        </article>
+      </div>
+
+      <section className="services-admin-grid">
+        <article className="services-list-card">
+          <header className="roles-card-head">
+            <div>
+              <h3>Catálogo de servicios</h3>
+              <p>Selecciona un servicio para editar sus planes.</p>
             </div>
-            <small>
-              <CheckCircle2 size={14} />
-              Disponible en formulario y seguimiento
-            </small>
+            <button className="roles-filter-button" onClick={() => setStatusFilter(statusFilter === "Todos" ? "Activos" : statusFilter === "Activos" ? "Inactivos" : "Todos")} type="button">
+              <Filter size={17} />
+              Filtros
+            </button>
+          </header>
+          <label className="services-list-search">
+            <Search size={17} />
+            <input onChange={(event) => setQuery(event.target.value)} placeholder="Buscar servicio..." value={query} />
+          </label>
+          <div className="services-list">
+            {filteredServices.map((service) => {
+              const Icon = serviceIcon(service.name);
+              const selected = selectedService?.id === service.id;
+
+              return (
+                <button
+                  className={`services-list-item ${selected ? "is-selected" : ""}`}
+                  key={service.id}
+                  onClick={() => {
+                    setSelectedServiceId(service.id);
+                    setShowPlanForm(false);
+                  }}
+                  type="button"
+                >
+                  <span className="services-list-icon"><Icon size={21} /></span>
+                  <span>
+                    <strong>{service.name}</strong>
+                    <small>{service.category}</small>
+                  </span>
+                  {service.variablePricing && <em>Variable</em>}
+                </button>
+              );
+            })}
+          </div>
+        </article>
+
+        {selectedService && (
+          <article className="services-detail-card">
+            <header className="services-detail-head">
+              <div>
+                <span className="services-detail-icon">{(() => {
+                  const Icon = serviceIcon(selectedService.name);
+                  return <Icon size={24} />;
+                })()}</span>
+                <div>
+                  <h3>{selectedService.name}</h3>
+                  <p>{selectedService.description}</p>
+                </div>
+              </div>
+              <button className="services-status-button" onClick={() => toggleServiceStatus(selectedService)} type="button">
+                {selectedService.status === "active" ? "Inhabilitar" : "Activar"}
+              </button>
+            </header>
+
+            <div className="services-detail-meta">
+              <span>{selectedService.category}</span>
+              <span>{selectedService.plans.length} planes</span>
+              <span>{selectedService.variablePricing ? "Acepta valor variable" : "Precios fijos"}</span>
+            </div>
+
+            {showPlanForm && (
+              <form className="services-plan-form" onSubmit={savePlan}>
+                <label>
+                  <span>Nombre del plan <b>*</b></span>
+                  <input onChange={(event) => updatePlanForm("name", event.target.value)} placeholder="Ej. Profesional" value={planForm.name} />
+                </label>
+                <label>
+                  <span>Tipo de precio</span>
+                  <select onChange={(event) => updatePlanForm("priceMode", event.target.value)} value={planForm.priceMode}>
+                    <option value="fixed">Precio fijo</option>
+                    <option value="variable">Valor variable</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Precio</span>
+                  <input
+                    disabled={planForm.priceMode === "variable"}
+                    min="0"
+                    onChange={(event) => updatePlanForm("price", event.target.value)}
+                    placeholder={planForm.priceMode === "variable" ? "Se cotiza según el caso" : "Ej. 14990"}
+                    type="number"
+                    value={planForm.price}
+                  />
+                </label>
+                <label>
+                  <span>Ciclo</span>
+                  <select disabled={planForm.priceMode === "variable"} onChange={(event) => updatePlanForm("billingCycle", event.target.value)} value={planForm.billingCycle}>
+                    <option>Único</option>
+                    <option>Mensual</option>
+                    <option>Anual</option>
+                    <option>Variable</option>
+                  </select>
+                </label>
+                <label className="services-plan-wide">
+                  <span>Descripción <b>*</b></span>
+                  <input onChange={(event) => updatePlanForm("description", event.target.value)} placeholder="Describe alcance, condiciones o entregables..." value={planForm.description} />
+                </label>
+                <div className="services-plan-actions">
+                  <button onClick={() => setShowPlanForm(false)} type="button">Cancelar</button>
+                  <button type="submit"><Save size={17} /> Guardar plan</button>
+                </div>
+              </form>
+            )}
+
+            <div className="services-plans-toolbar">
+              <h3>Planes y precios</h3>
+              <button onClick={openNewPlan} type="button"><Plus size={17} /> Agregar plan</button>
+            </div>
+
+            <div className="services-plans-wrap">
+              <table className="services-plans-table">
+                <thead>
+                  <tr>
+                    <th>Plan</th>
+                    <th>Descripción</th>
+                    <th>Precio</th>
+                    <th>Ciclo</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedService.plans.map((plan) => (
+                    <tr key={plan.id}>
+                      <td><strong>{plan.name}</strong></td>
+                      <td>{plan.description}</td>
+                      <td><span className={`services-price-badge is-${plan.priceMode}`}>{money(plan)}</span></td>
+                      <td>{plan.billingCycle}</td>
+                      <td>
+                        <span className={`clients-status-badge is-${plan.status === "active" ? "active" : "inactive"}`}>
+                          {plan.status === "active" ? "Activo" : "Inactivo"}
+                        </span>
+                      </td>
+                      <td>
+                        <button className="clients-row-action" onClick={() => setOpenMenu(openMenu === plan.id ? "" : plan.id)} type="button">
+                          <MoreVertical size={20} />
+                        </button>
+                        <div className={`clients-action-menu ${openMenu === plan.id ? "is-open" : ""}`}>
+                          <button onClick={() => openEditPlan(plan)} type="button"><Edit3 size={15} /> Editar</button>
+                          <button onClick={() => togglePlanStatus(plan)} type="button">
+                            {plan.status === "active" ? "Inhabilitar" : "Activar"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </article>
-        ))}
+        )}
       </section>
-    </div>
+    </section>
   );
 }

@@ -10,14 +10,26 @@ const { Pool } = require("pg");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
-const allowedOrigins = (process.env.FRONTEND_ORIGIN || "http://localhost:5173,http://localhost:8080")
+const allowedOrigins = (
+  process.env.FRONTEND_ORIGIN || "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:8080"
+)
   .split(",")
   .map((origin) => origin.trim());
 const dataDir = path.join(__dirname, "data");
 const requestsFile = path.join(dataDir, "contact-requests.json");
 const clientsFile = path.join(dataDir, "clients.json");
+const adminUsersFile = path.join(dataDir, "admin-users.json");
 const logoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-white.svg");
 const adminEmail = process.env.ADMIN_EMAIL || "contacto@giovsoft.com";
+const adminPassword = process.env.ADMIN_PASSWORD || "GiovSoft2026!";
+const adminName = process.env.ADMIN_NAME || "Giovanni Ramos";
+const masterAdminEmail = (process.env.MASTER_ADMIN_EMAIL || "").toLowerCase();
+const masterAdminPassword = process.env.MASTER_ADMIN_PASSWORD || "";
+const masterAdminName = process.env.MASTER_ADMIN_NAME || "Master GiovSoft";
+const temporaryAdminPassword = "123456";
+const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || "giovsoft-local-admin-secret";
+const adminTokenTtlMs = Number(process.env.ADMIN_TOKEN_TTL_HOURS || 12) * 60 * 60 * 1000;
+const genericPublicRfc = "XAXX010101000";
 const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 const cloudSqlHost = process.env.CLOUD_SQL_CONNECTION_NAME
   ? `/cloudsql/${process.env.CLOUD_SQL_CONNECTION_NAME}`
@@ -89,6 +101,117 @@ app.use(
   })
 );
 app.use(express.json({ limit: "256kb" }));
+
+function base64UrlEncode(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function base64UrlDecode(value) {
+  return Buffer.from(value, "base64url").toString("utf8");
+}
+
+function signPayload(payload) {
+  return crypto.createHmac("sha256", adminTokenSecret).update(payload).digest("base64url");
+}
+
+function createPasswordHash(password) {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("base64url");
+
+  return `${salt}.${hash}`;
+}
+
+function verifyPassword(password, passwordHash) {
+  if (!passwordHash || !passwordHash.includes(".")) {
+    return false;
+  }
+
+  const [salt, storedHash] = passwordHash.split(".");
+  const incomingHash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("base64url");
+  const incomingBuffer = Buffer.from(incomingHash);
+  const storedBuffer = Buffer.from(storedHash || "");
+
+  return incomingBuffer.length === storedBuffer.length && crypto.timingSafeEqual(incomingBuffer, storedBuffer);
+}
+
+function publicAdminUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    isMaster: Boolean(user.isMaster),
+    passwordChangeRequired: Boolean(user.passwordChangeRequired),
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    lastLoginAt: user.lastLoginAt || "",
+  };
+}
+
+function createAdminToken(user) {
+  const payload = JSON.stringify({
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+    passwordChangeRequired: Boolean(user.passwordChangeRequired),
+    exp: Date.now() + adminTokenTtlMs,
+  });
+  const encodedPayload = base64UrlEncode(payload);
+  const signature = signPayload(encodedPayload);
+
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifyAdminToken(token) {
+  if (!token || !token.includes(".")) {
+    return false;
+  }
+
+  const [encodedPayload, signature] = token.split(".");
+  const expectedSignature = signPayload(encodedPayload);
+  const signatureBuffer = Buffer.from(signature || "");
+  const expectedBuffer = Buffer.from(expectedSignature);
+
+  if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    return false;
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    if (!payload.sub || Number(payload.exp) <= Date.now()) {
+      return null;
+    }
+
+    return payload;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function requireAdminAuth(req, res, next) {
+  const authHeader = req.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const payload = verifyAdminToken(token);
+
+  if (!payload) {
+    return res.status(401).json({ message: "Sesion administrativa invalida o expirada." });
+  }
+
+  try {
+    const users = await readAdminUsers();
+    const user = users.find((item) => item.id === payload.sub && item.status === "active");
+
+    if (!user) {
+      return res.status(401).json({ message: "Usuario administrativo no disponible." });
+    }
+
+    req.adminUser = user;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
 
 function createTransporter() {
   if (!smtpConfigured) {
@@ -570,6 +693,103 @@ async function ensureClientsFile() {
   }
 }
 
+async function ensureAdminUsersFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(adminUsersFile);
+  } catch {
+    const now = new Date().toISOString();
+    const seedUser = {
+      id: crypto.randomUUID(),
+      name: adminName,
+      email: adminEmail.toLowerCase(),
+      role: "Administrador",
+      status: "active",
+      passwordHash: createPasswordHash(adminPassword),
+      passwordChangeRequired: false,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: "",
+    };
+
+    await fs.writeFile(adminUsersFile, JSON.stringify([seedUser], null, 2), "utf8");
+  }
+}
+
+async function ensureMasterAdminUser(users) {
+  if (!masterAdminEmail || !masterAdminPassword) {
+    return users;
+  }
+
+  const existingMasterIndex = users.findIndex((user) => user.isMaster || user.email === masterAdminEmail);
+  const now = new Date().toISOString();
+
+  if (existingMasterIndex >= 0) {
+    const currentMaster = users[existingMasterIndex];
+    const needsUpdate =
+      currentMaster.name !== (currentMaster.name || masterAdminName) ||
+      currentMaster.email !== masterAdminEmail ||
+      currentMaster.role !== "Master" ||
+      currentMaster.status !== "active" ||
+      currentMaster.isMaster !== true ||
+      currentMaster.passwordChangeRequired !== false;
+
+    if (!needsUpdate) {
+      return users;
+    }
+
+    const updatedMaster = {
+      ...currentMaster,
+      name: currentMaster.name || masterAdminName,
+      email: masterAdminEmail,
+      role: "Master",
+      status: "active",
+      isMaster: true,
+      passwordChangeRequired: false,
+      updatedAt: now,
+    };
+
+    users[existingMasterIndex] = updatedMaster;
+    return users;
+  }
+
+  return [
+    {
+      id: crypto.randomUUID(),
+      name: masterAdminName,
+      email: masterAdminEmail,
+      role: "Master",
+      status: "active",
+      isMaster: true,
+      passwordHash: createPasswordHash(masterAdminPassword),
+      passwordChangeRequired: false,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: "",
+    },
+    ...users,
+  ];
+}
+
+async function readAdminUsers() {
+  await ensureAdminUsersFile();
+  const raw = await fs.readFile(adminUsersFile, "utf8");
+  const users = JSON.parse(raw);
+  const usersWithMaster = await ensureMasterAdminUser(users);
+
+  if (usersWithMaster.length !== users.length || usersWithMaster.some((user, index) => user !== users[index])) {
+    await fs.writeFile(adminUsersFile, JSON.stringify(usersWithMaster, null, 2), "utf8");
+  }
+
+  return usersWithMaster;
+}
+
+async function writeAdminUsers(users) {
+  await ensureAdminUsersFile();
+  await fs.writeFile(adminUsersFile, JSON.stringify(users, null, 2), "utf8");
+}
+
 async function readClients() {
   const currentPool = getPool();
 
@@ -817,7 +1037,7 @@ function validateClientPayload(body, existingClient) {
   const payload = {
     businessName: sanitizeText(body.businessName || body.company || existingClient?.businessName),
     legalName: sanitizeText(body.legalName || existingClient?.legalName),
-    rfc: sanitizeText(body.rfc || existingClient?.rfc),
+    rfc: sanitizeText(body.rfc || existingClient?.rfc || genericPublicRfc),
     status: sanitizeText(body.status || existingClient?.status || "active"),
     segment: sanitizeText(body.segment || existingClient?.segment),
     website: sanitizeText(body.website || existingClient?.website),
@@ -848,6 +1068,202 @@ function validateClientPayload(body, existingClient) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "giovsoft-api" });
+});
+
+app.post("/api/admin/login", async (req, res, next) => {
+  try {
+    const email = sanitizeText(req.body?.email).toLowerCase();
+    const password = sanitizeText(req.body?.password);
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Correo y contraseña son requeridos." });
+    }
+
+    const users = await readAdminUsers();
+    const userIndex = users.findIndex((item) => item.email === email && item.status === "active");
+    const user = users[userIndex];
+
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return res.status(401).json({ message: "Correo o contraseña incorrectos." });
+    }
+
+    const updatedUser = {
+      ...user,
+      lastLoginAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    users[userIndex] = updatedUser;
+    await writeAdminUsers(users);
+
+    return res.json({
+      token: createAdminToken(updatedUser),
+      user: publicAdminUser(updatedUser),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.use("/api/admin", requireAdminAuth);
+
+app.post("/api/admin/change-password", async (req, res, next) => {
+  try {
+    const currentPassword = sanitizeText(req.body?.currentPassword);
+    const nextPassword = sanitizeText(req.body?.newPassword);
+
+    if (!nextPassword || nextPassword.length < 8) {
+      return res.status(400).json({ message: "La nueva contraseña debe tener al menos 8 caracteres." });
+    }
+
+    if (!req.adminUser.passwordChangeRequired && !verifyPassword(currentPassword, req.adminUser.passwordHash)) {
+      return res.status(400).json({ message: "La contraseña actual no es correcta." });
+    }
+
+    const users = await readAdminUsers();
+    const userIndex = users.findIndex((item) => item.id === req.adminUser.id);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ message: "Usuario no encontrado." });
+    }
+
+    const updatedUser = {
+      ...users[userIndex],
+      passwordHash: createPasswordHash(nextPassword),
+      passwordChangeRequired: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    users[userIndex] = updatedUser;
+    await writeAdminUsers(users);
+
+    return res.json({
+      message: "Contraseña actualizada.",
+      token: createAdminToken(updatedUser),
+      user: publicAdminUser(updatedUser),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/users", async (_req, res, next) => {
+  try {
+    const users = await readAdminUsers();
+    res.json({ users: users.filter((user) => !user.isMaster).map(publicAdminUser) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/users", async (req, res, next) => {
+  try {
+    const name = sanitizeText(req.body?.name);
+    const email = sanitizeText(req.body?.email).toLowerCase();
+    const role = sanitizeText(req.body?.role || "Administrador");
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Nombre y correo son requeridos." });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ message: "Correo inválido." });
+    }
+
+    const users = await readAdminUsers();
+
+    if (users.some((item) => item.email === email)) {
+      return res.status(409).json({ message: "Ya existe un usuario con ese correo." });
+    }
+
+    const now = new Date().toISOString();
+    const user = {
+      id: crypto.randomUUID(),
+      name,
+      email,
+      role,
+      status: "active",
+      passwordHash: createPasswordHash(temporaryAdminPassword),
+      passwordChangeRequired: true,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: "",
+    };
+
+    users.unshift(user);
+    await writeAdminUsers(users);
+
+    return res.status(201).json({
+      message: "Usuario creado. Contraseña temporal: 123456.",
+      user: publicAdminUser(user),
+      temporaryPassword: temporaryAdminPassword,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/admin/users/:id", async (req, res, next) => {
+  try {
+    const users = await readAdminUsers();
+    const userIndex = users.findIndex((item) => item.id === req.params.id);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ message: "Usuario no encontrado." });
+    }
+
+    if (users[userIndex].isMaster) {
+      return res.status(403).json({ message: "El usuario master no puede modificarse desde el panel." });
+    }
+
+    const updatedUser = {
+      ...users[userIndex],
+      name: sanitizeText(req.body?.name || users[userIndex].name),
+      role: sanitizeText(req.body?.role || users[userIndex].role),
+      status: sanitizeText(req.body?.status || users[userIndex].status),
+      updatedAt: new Date().toISOString(),
+    };
+
+    users[userIndex] = updatedUser;
+    await writeAdminUsers(users);
+
+    return res.json({ message: "Usuario actualizado.", user: publicAdminUser(updatedUser) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/users/:id/reset-password", async (req, res, next) => {
+  try {
+    const users = await readAdminUsers();
+    const userIndex = users.findIndex((item) => item.id === req.params.id);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ message: "Usuario no encontrado." });
+    }
+
+    if (users[userIndex].isMaster) {
+      return res.status(403).json({ message: "El usuario master no puede restablecerse desde el panel." });
+    }
+
+    const updatedUser = {
+      ...users[userIndex],
+      passwordHash: createPasswordHash(temporaryAdminPassword),
+      passwordChangeRequired: true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    users[userIndex] = updatedUser;
+    await writeAdminUsers(users);
+
+    return res.json({
+      message: "Contraseña restablecida. Contraseña temporal: 123456.",
+      user: publicAdminUser(updatedUser),
+      temporaryPassword: temporaryAdminPassword,
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/contact-requests", async (req, res, next) => {
