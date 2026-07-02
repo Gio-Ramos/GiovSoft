@@ -21,16 +21,21 @@ interface InvoiceItem {
 
 interface RecurringPayment {
   id: string;
+  subscriptionName: string;
   client: string;
   service: string;
   plan: string;
   amount: number;
   frequency: string;
   paymentDay: number;
+  startedAt: string;
   nextCharge: string;
+  renewalDate: string;
   method: string;
+  autoInvoice: boolean;
   status: RecurringStatus;
   owner: string;
+  notes: string;
 }
 
 interface CollectionItem {
@@ -57,16 +62,21 @@ interface InvoiceForm {
 }
 
 interface RecurringForm {
+  subscriptionName: string;
   client: string;
   service: string;
   plan: string;
   amount: string;
   frequency: string;
   paymentDay: string;
+  startedAt: string;
   nextCharge: string;
+  renewalDate: string;
   method: string;
+  autoInvoice: boolean;
   status: RecurringStatus;
   owner: string;
+  notes: string;
 }
 
 interface CollectionForm {
@@ -121,16 +131,21 @@ const emptyInvoiceForm: InvoiceForm = {
 };
 
 const emptyRecurringForm: RecurringForm = {
+  subscriptionName: "",
   client: "",
   service: "",
   plan: "",
   amount: "",
   frequency: "Mensual",
   paymentDay: "1",
+  startedAt: new Date().toISOString().slice(0, 10),
   nextCharge: "",
+  renewalDate: "",
   method: "",
+  autoInvoice: true,
   status: "active",
   owner: "",
+  notes: "",
 };
 
 const emptyCollectionForm: CollectionForm = {
@@ -207,7 +222,9 @@ export default function AdminBilling() {
   const filteredRecurringPayments = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return recurringPayments.filter((payment) => {
-      const matchesQuery = !normalized || `${payment.client} ${payment.service} ${payment.plan} ${payment.method} ${payment.owner}`.toLowerCase().includes(normalized);
+      const matchesQuery =
+        !normalized ||
+        `${payment.subscriptionName ?? ""} ${payment.client} ${payment.service} ${payment.plan} ${payment.method} ${payment.owner} ${payment.notes ?? ""}`.toLowerCase().includes(normalized);
       const matchesStatus = statusFilter === "Todos" || recurringLabels[payment.status] === statusFilter;
       return matchesQuery && matchesStatus;
     });
@@ -237,6 +254,44 @@ export default function AdminBilling() {
   function updateRecurringStatus(payment: RecurringPayment, status: RecurringStatus) {
     setRecurringPayments((current) => current.map((item) => (item.id === payment.id ? { ...item, status } : item)));
     setOpenMenu("");
+  }
+
+  function createInvoiceFromSubscription(payment: RecurringPayment) {
+    const invoice: InvoiceItem = {
+      id: crypto.randomUUID(),
+      folio: `FAC-${String(invoices.length + 1).padStart(5, "0")}`,
+      client: payment.client,
+      concept: `${payment.subscriptionName || payment.service} · ${payment.plan}`,
+      amount: payment.amount,
+      status: "sent",
+      dueDate: payment.nextCharge,
+      issuedAt: new Date().toISOString().slice(0, 10),
+    };
+
+    setInvoices((current) => [invoice, ...current]);
+    setOpenMenu("");
+    setActiveTab("invoices");
+    setMessage("Factura generada desde la suscripción.");
+  }
+
+  function createCollectionFromSubscription(payment: RecurringPayment) {
+    const collection: CollectionItem = {
+      id: crypto.randomUUID(),
+      client: payment.client,
+      concept: `${payment.subscriptionName || payment.service} · ${payment.plan}`,
+      expectedAmount: payment.amount,
+      paidAmount: 0,
+      dueDate: payment.nextCharge,
+      lastContact: new Date().toISOString().slice(0, 10),
+      nextFollowUp: payment.nextCharge,
+      status: "pending",
+      notes: payment.notes || "Cobranza creada desde suscripción.",
+    };
+
+    setCollections((current) => [collection, ...current]);
+    setOpenMenu("");
+    setActiveTab("collections");
+    setMessage("Cobranza creada desde la suscripción.");
   }
 
   function updateCollectionStatus(collection: CollectionItem, status: CollectionStatus) {
@@ -287,29 +342,34 @@ export default function AdminBilling() {
   function saveRecurring(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!recurringForm.client || !recurringForm.service || !recurringForm.amount || !recurringForm.nextCharge) {
-      setMessage("Completa cliente, servicio, monto y próximo cobro.");
+    if (!recurringForm.client || !recurringForm.subscriptionName || !recurringForm.service || !recurringForm.amount || !recurringForm.nextCharge) {
+      setMessage("Completa cliente, suscripción, servicio, monto y próximo cobro.");
       return;
     }
 
     const payment: RecurringPayment = {
       id: crypto.randomUUID(),
+      subscriptionName: recurringForm.subscriptionName,
       client: recurringForm.client,
       service: recurringForm.service,
       plan: recurringForm.plan || "Sin plan",
       amount: Number(recurringForm.amount),
       frequency: recurringForm.frequency,
       paymentDay: Number(recurringForm.paymentDay || 1),
+      startedAt: recurringForm.startedAt || new Date().toISOString().slice(0, 10),
       nextCharge: recurringForm.nextCharge,
+      renewalDate: recurringForm.renewalDate || recurringForm.nextCharge,
       method: recurringForm.method || "Por definir",
+      autoInvoice: recurringForm.autoInvoice,
       status: recurringForm.status,
       owner: recurringForm.owner || "Administración",
+      notes: recurringForm.notes,
     };
 
     setRecurringPayments((current) => [payment, ...current]);
-    setRecurringForm(emptyRecurringForm);
+    setRecurringForm({ ...emptyRecurringForm, startedAt: new Date().toISOString().slice(0, 10) });
     setShowForm(false);
-    setMessage("Pago recurrente agregado correctamente.");
+    setMessage("Suscripción agregada correctamente.");
   }
 
   function saveCollection(event: FormEvent<HTMLFormElement>) {
@@ -368,8 +428,8 @@ export default function AdminBilling() {
         </button>
         <button onClick={() => openCreateForm("recurring")} type="button">
           <span><WalletCards size={21} /></span>
-          <strong>Pago recurrente</strong>
-          <small>Mensualidades, planes, métodos y próximo cobro.</small>
+          <strong>Suscripción recurrente</strong>
+          <small>Planes, renovación, auto-facturación y próximo cobro.</small>
         </button>
         <button onClick={() => openCreateForm("collections")} type="button">
           <span><CalendarClock size={21} /></span>
@@ -388,7 +448,7 @@ export default function AdminBilling() {
       <article className="billing-table-card">
         <nav className="billing-tabs">
           <button className={activeTab === "invoices" ? "is-active" : ""} onClick={() => changeTab("invoices")} type="button">Facturas</button>
-          <button className={activeTab === "recurring" ? "is-active" : ""} onClick={() => changeTab("recurring")} type="button">Pagos recurrentes</button>
+          <button className={activeTab === "recurring" ? "is-active" : ""} onClick={() => changeTab("recurring")} type="button">Suscripciones</button>
           <button className={activeTab === "collections" ? "is-active" : ""} onClick={() => changeTab("collections")} type="button">Cobranza</button>
         </nav>
         {showForm && activeTab === "invoices" && (
@@ -406,17 +466,22 @@ export default function AdminBilling() {
 
         {showForm && activeTab === "recurring" && (
           <form className="billing-entry-form is-recurring" onSubmit={saveRecurring}>
+            <label><span>Suscripción <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, subscriptionName: event.target.value }))} placeholder="Ej. Workspace mensual" value={recurringForm.subscriptionName} /></label>
             <label><span>Cliente <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, client: event.target.value }))} placeholder="Ej. Clínica Valle del Sol" value={recurringForm.client} /></label>
             <label><span>Servicio <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, service: event.target.value }))} placeholder="Ej. Google Workspace" value={recurringForm.service} /></label>
             <label><span>Plan</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, plan: event.target.value }))} placeholder="Ej. Business Standard" value={recurringForm.plan} /></label>
             <label><span>Monto <b>*</b></span><input min="0" onChange={(event) => setRecurringForm((current) => ({ ...current, amount: event.target.value }))} type="number" value={recurringForm.amount} /></label>
             <label><span>Frecuencia</span><select onChange={(event) => setRecurringForm((current) => ({ ...current, frequency: event.target.value }))} value={recurringForm.frequency}><option>Mensual</option><option>Anual</option><option>Trimestral</option><option>Semestral</option></select></label>
             <label><span>Día de cobro</span><input max="31" min="1" onChange={(event) => setRecurringForm((current) => ({ ...current, paymentDay: event.target.value }))} type="number" value={recurringForm.paymentDay} /></label>
+            <label><span>Inicio</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, startedAt: event.target.value }))} type="date" value={recurringForm.startedAt} /></label>
             <label><span>Próximo cobro <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, nextCharge: event.target.value }))} type="date" value={recurringForm.nextCharge} /></label>
+            <label><span>Renovación</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, renewalDate: event.target.value }))} type="date" value={recurringForm.renewalDate} /></label>
             <label><span>Método</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, method: event.target.value }))} placeholder="Ej. Transferencia, tarjeta" value={recurringForm.method} /></label>
             <label><span>Responsable</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ej. Administración" value={recurringForm.owner} /></label>
             <label><span>Estado</span><select onChange={(event) => setRecurringForm((current) => ({ ...current, status: event.target.value as RecurringStatus }))} value={recurringForm.status}>{Object.entries(recurringLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <div className="billing-entry-actions"><button onClick={() => setShowForm(false)} type="button">Cancelar</button><button type="submit"><Save size={16} /> Guardar recurrente</button></div>
+            <label className="billing-entry-check"><input checked={recurringForm.autoInvoice} onChange={(event) => setRecurringForm((current) => ({ ...current, autoInvoice: event.target.checked }))} type="checkbox" /> <span>Generar factura automáticamente</span></label>
+            <label className="billing-entry-wide"><span>Notas</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Condiciones, recordatorios o datos de renovación..." value={recurringForm.notes} /></label>
+            <div className="billing-entry-actions"><button onClick={() => setShowForm(false)} type="button">Cancelar</button><button type="submit"><Save size={16} /> Guardar suscripción</button></div>
           </form>
         )}
 
@@ -476,22 +541,28 @@ export default function AdminBilling() {
 
           {activeTab === "recurring" && (
             <table className="billing-data-table">
-              <thead><tr><th>Cliente</th><th>Servicio</th><th>Plan</th><th>Monto</th><th>Periodicidad</th><th>Próximo cobro</th><th>Método</th><th>Responsable</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <thead><tr><th>Suscripción</th><th>Cliente</th><th>Servicio</th><th>Plan</th><th>Monto</th><th>Periodicidad</th><th>Inicio</th><th>Próximo cobro</th><th>Renovación</th><th>Auto factura</th><th>Método</th><th>Responsable</th><th>Estado</th><th>Acciones</th></tr></thead>
               <tbody>
                 {filteredRecurringPayments.map((payment) => (
                   <tr key={payment.id}>
+                    <td><strong>{payment.subscriptionName || payment.service}</strong></td>
                     <td><strong>{payment.client}</strong></td>
                     <td>{payment.service}</td>
                     <td>{payment.plan}</td>
                     <td>{money(payment.amount)}</td>
                     <td>{payment.frequency} · día {payment.paymentDay}</td>
+                    <td>{formatDate(payment.startedAt || payment.nextCharge)}</td>
                     <td>{formatDate(payment.nextCharge)}</td>
+                    <td>{formatDate(payment.renewalDate || payment.nextCharge)}</td>
+                    <td>{payment.autoInvoice === false ? "Manual" : "Automática"}</td>
                     <td>{payment.method}</td>
                     <td>{payment.owner}</td>
                     <td><span className={`billing-status is-${payment.status}`}>{recurringLabels[payment.status]}</span></td>
                     <td>
                       <button className="clients-row-action" onClick={() => setOpenMenu(openMenu === payment.id ? "" : payment.id)} type="button"><MoreVertical size={20} /></button>
                       <div className={`clients-action-menu ${openMenu === payment.id ? "is-open" : ""}`}>
+                        <button onClick={() => createInvoiceFromSubscription(payment)} type="button">Generar factura</button>
+                        <button onClick={() => createCollectionFromSubscription(payment)} type="button">Crear cobranza</button>
                         <button onClick={() => updateRecurringStatus(payment, "active")} type="button">Activar</button>
                         <button onClick={() => updateRecurringStatus(payment, "paused")} type="button">Pausar</button>
                         <button onClick={() => updateRecurringStatus(payment, "cancelled")} type="button">Cancelar</button>
