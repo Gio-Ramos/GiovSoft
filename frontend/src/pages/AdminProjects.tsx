@@ -14,8 +14,9 @@ import {
   TimerReset,
   UsersRound,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
+import { api } from "../lib/api";
 
 type ProjectStatus = "planning" | "in_progress" | "review" | "completed" | "paused";
 type DeliverableStatus = "pending" | "in_progress" | "review" | "done";
@@ -50,11 +51,13 @@ interface ProjectItem {
   id: string;
   name: string;
   client: string;
+  clientId?: string;
   service: string;
   manager: string;
   status: ProjectStatus;
   dueDate: string;
   budget: string;
+  details: Record<string, string>;
   deliverables: Deliverable[];
   comments: ProjectComment[];
   attachments: ProjectAttachment[];
@@ -63,11 +66,29 @@ interface ProjectItem {
 interface ProjectForm {
   name: string;
   client: string;
+  clientId: string;
   service: string;
   manager: string;
   status: ProjectStatus;
   dueDate: string;
   budget: string;
+  details: Record<string, string>;
+}
+
+interface ClientOption {
+  id: string;
+  businessName: string;
+  legalName?: string;
+  status: string;
+}
+
+interface ProjectField {
+  key: string;
+  label: string;
+  placeholder: string;
+  type?: "text" | "number" | "date" | "select";
+  options?: string[];
+  required?: boolean;
 }
 
 interface DeliverableForm {
@@ -96,11 +117,13 @@ const deliverableLabels: Record<DeliverableStatus, string> = {
 const emptyProjectForm: ProjectForm = {
   name: "",
   client: "",
+  clientId: "",
   service: "",
   manager: "",
   status: "planning",
   dueDate: "",
   budget: "",
+  details: {},
 };
 
 const emptyDeliverableForm: DeliverableForm = {
@@ -111,7 +134,55 @@ const emptyDeliverableForm: DeliverableForm = {
   notes: "",
 };
 
-const serviceOptions = ["GiovSoft 360", "Sitios web", "Ecommerce", "Dominios", "Correos corporativos", "Google Workspace"];
+const defaultServiceOptions = ["GiovSoft 360", "Sitios web", "Ecommerce", "Dominios", "Correos corporativos", "Google Workspace"];
+const projectStorageKey = "giovsoft-admin-projects-v2";
+const servicesStorageKey = "giovsoft-admin-services-v2";
+
+const projectFieldTemplates: Record<string, ProjectField[]> = {
+  "Sitios web": [
+    { key: "objective", label: "Objetivo del sitio", placeholder: "Ej. Captar prospectos para servicios médicos", required: true },
+    { key: "pages", label: "Secciones estimadas", placeholder: "Ej. Inicio, servicios, nosotros, contacto", required: true },
+    { key: "contentStatus", label: "Contenido", placeholder: "Seleccionar estado", type: "select", options: ["Lo entrega el cliente", "Lo redacta GiovSoft", "Mixto"], required: true },
+    { key: "integrations", label: "Integraciones", placeholder: "Ej. WhatsApp, Analytics, CRM, formularios" },
+    { key: "domainStatus", label: "Dominio", placeholder: "Ej. Ya existe / se debe registrar" },
+    { key: "hostingRequirement", label: "Hosting", placeholder: "Ej. Incluido, externo, migración" },
+  ],
+  Ecommerce: [
+    { key: "catalogSize", label: "Productos aproximados", placeholder: "Ej. 120", type: "number", required: true },
+    { key: "paymentGateway", label: "Pasarela de pago", placeholder: "Ej. Stripe, Mercado Pago, Openpay", required: true },
+    { key: "shippingMethod", label: "Envíos", placeholder: "Ej. Envia.com, Skydrop, paquetería manual" },
+    { key: "inventorySource", label: "Inventario", placeholder: "Ej. Manual, Excel, ERP, API" },
+    { key: "taxNeeds", label: "Facturación", placeholder: "Ej. Requiere CFDI / no aplica" },
+  ],
+  Dominios: [
+    { key: "domainName", label: "Dominio solicitado", placeholder: "Ej. empresa.com", required: true },
+    { key: "registrationYears", label: "Años de registro", placeholder: "Ej. 1", type: "number", required: true },
+    { key: "dnsProvider", label: "DNS", placeholder: "Ej. Cloudflare, Google Domains, Registrar" },
+    { key: "ownerEmail", label: "Correo titular", placeholder: "Ej. propietario@empresa.com", required: true },
+    { key: "privacy", label: "Privacidad WHOIS", placeholder: "Seleccionar", type: "select", options: ["Incluida", "No incluida", "Por confirmar"] },
+  ],
+  "Correos corporativos": [
+    { key: "domainName", label: "Dominio", placeholder: "Ej. empresa.com", required: true },
+    { key: "mailboxCount", label: "Buzones", placeholder: "Ej. 8", type: "number", required: true },
+    { key: "provider", label: "Proveedor", placeholder: "Ej. Google Workspace, Microsoft 365, hosting" },
+    { key: "migration", label: "Migración", placeholder: "Seleccionar", type: "select", options: ["Sin migración", "Migración parcial", "Migración completa"] },
+    { key: "aliases", label: "Alias requeridos", placeholder: "Ej. ventas@, soporte@, no-reply@" },
+  ],
+  "Google Workspace": [
+    { key: "domainName", label: "Dominio", placeholder: "Ej. empresa.com", required: true },
+    { key: "licenseCount", label: "Licencias", placeholder: "Ej. 12", type: "number", required: true },
+    { key: "plan", label: "Plan", placeholder: "Seleccionar", type: "select", options: ["Business Starter", "Business Standard", "Business Plus", "Enterprise"] },
+    { key: "migration", label: "Migración de correo", placeholder: "Seleccionar", type: "select", options: ["No", "Sí, desde Gmail", "Sí, desde Microsoft", "Sí, desde otro proveedor"] },
+    { key: "adminContact", label: "Contacto administrador", placeholder: "Ej. nombre@empresa.com" },
+  ],
+  "GiovSoft 360": [
+    { key: "businessGoal", label: "Objetivo del negocio", placeholder: "Ej. Digitalizar ventas y soporte", required: true },
+    { key: "includedServices", label: "Servicios incluidos", placeholder: "Ej. Sitio, dominio, correos, Workspace, soporte", required: true },
+    { key: "priority", label: "Prioridad", placeholder: "Seleccionar", type: "select", options: ["Alta", "Media", "Baja"] },
+    { key: "currentStack", label: "Herramientas actuales", placeholder: "Ej. Gmail personal, hosting externo, Excel" },
+    { key: "launchTarget", label: "Meta de lanzamiento", placeholder: "Ej. 30 días" },
+  ],
+};
 
 const demoProjects: ProjectItem[] = [];
 
@@ -152,7 +223,20 @@ function todayIso() {
 }
 
 export default function AdminProjects() {
-  const [projects, setProjects] = useState(demoProjects);
+  const [projects, setProjects] = useState<ProjectItem[]>(() => {
+    const stored = window.localStorage.getItem(projectStorageKey);
+
+    if (!stored) {
+      return demoProjects;
+    }
+
+    try {
+      return JSON.parse(stored) as ProjectItem[];
+    } catch (_error) {
+      return demoProjects;
+    }
+  });
+  const [clients, setClients] = useState<ClientOption[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [openMenu, setOpenMenu] = useState("");
@@ -166,6 +250,17 @@ export default function AdminProjects() {
   const [message, setMessage] = useState("");
 
   useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
+
+  useEffect(() => {
+    window.localStorage.setItem(projectStorageKey, JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+    api
+      .get<{ clients: ClientOption[] }>("/api/admin/clients")
+      .then((response) => setClients(response.data.clients.filter((client) => client.status !== "inactive")))
+      .catch(() => setClients([]));
+  }, []);
 
   const projectsWithProgress = useMemo(
     () => projects.map((project) => ({ ...project, status: statusFromProgress(project), progress: calculateProgress(project) })),
@@ -184,25 +279,71 @@ export default function AdminProjects() {
     });
   }, [projectsWithProgress, query, statusFilter]);
 
+  const serviceOptions = useMemo(() => {
+    const storedServices = window.localStorage.getItem(servicesStorageKey);
+
+    if (!storedServices) {
+      return defaultServiceOptions;
+    }
+
+    try {
+      const parsedServices = JSON.parse(storedServices) as Array<{ name?: string }>;
+      const customServices = parsedServices.map((service) => service.name).filter(Boolean) as string[];
+      return Array.from(new Set([...defaultServiceOptions, ...customServices]));
+    } catch (_error) {
+      return defaultServiceOptions;
+    }
+  }, []);
+
   const activeProjects = projectsWithProgress.filter((project) => ["planning", "in_progress", "review"].includes(project.status)).length;
   const completedProjects = projectsWithProgress.filter((project) => project.status === "completed").length;
-  const averageProgress = Math.round(projectsWithProgress.reduce((total, project) => total + project.progress, 0) / projectsWithProgress.length);
+  const averageProgress = projectsWithProgress.length
+    ? Math.round(projectsWithProgress.reduce((total, project) => total + project.progress, 0) / projectsWithProgress.length)
+    : 0;
   const selectedProject = projectsWithProgress.find((project) => project.id === editingId);
+  const projectFields = projectFieldTemplates[form.service] || [];
 
   function toForm(project: ProjectItem): ProjectForm {
+    const client = clients.find((item) => item.id === project.clientId || item.businessName === project.client);
+
     return {
       name: project.name,
       client: project.client,
+      clientId: client?.id || "",
       service: project.service,
       manager: project.manager,
       status: project.status,
       dueDate: project.dueDate,
       budget: project.budget,
+      details: project.details || {},
     };
   }
 
   function updateForm(field: keyof ProjectForm, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === "service" ? { details: {} } : {}),
+    }));
+  }
+
+  function updateClient(value: string) {
+    const client = clients.find((item) => item.id === value);
+    setForm((current) => ({
+      ...current,
+      clientId: value,
+      client: client?.businessName || "",
+    }));
+  }
+
+  function updateProjectDetail(key: string, value: string) {
+    setForm((current) => ({
+      ...current,
+      details: {
+        ...current.details,
+        [key]: value,
+      },
+    }));
   }
 
   function updateDeliverableForm(field: keyof DeliverableForm, value: string) {
@@ -254,16 +395,25 @@ export default function AdminProjects() {
       return;
     }
 
+    const missingDynamicField = (projectFieldTemplates[form.service] || []).find((field) => field.required && !form.details[field.key]);
+
+    if (missingDynamicField) {
+      setMessage(`Completa el campo requerido: ${missingDynamicField.label}.`);
+      return;
+    }
+
     const existing = projects.find((project) => project.id === editingId);
     const nextProject: ProjectItem = {
       id: editingId || crypto.randomUUID(),
       name: form.name,
       client: form.client,
+      clientId: form.clientId,
       service: form.service,
       manager: form.manager,
       status: existing?.status || form.status,
       dueDate: form.dueDate,
       budget: form.budget || "Por definir",
+      details: form.details,
       deliverables: existing?.deliverables || [],
       comments: existing?.comments || [],
       attachments: existing?.attachments || [],
@@ -366,6 +516,97 @@ export default function AdminProjects() {
     setAttachmentName("");
     setSelectedFile(null);
     setMessage("Archivo registrado en el proyecto.");
+  }
+
+  if (editorMode === "project") {
+    return (
+      <section className="project-register-page">
+        <form className="projects-editor-card is-register-view" onSubmit={saveProject}>
+          <header>
+            <div>
+              <h3>{editingId ? "Editar proyecto" : "Nuevo proyecto"}</h3>
+              <p>Selecciona el cliente y el tipo de servicio para solicitar solo los datos necesarios.</p>
+            </div>
+            <div>
+              <button className="client-register-cancel" onClick={closeEditor} type="button">Cancelar</button>
+              <button className="client-register-save" type="submit"><Save size={17} /> Guardar proyecto</button>
+            </div>
+          </header>
+
+          {message && <p className={message.includes("Completa") ? "admin-form-error" : "admin-form-success"}>{message}</p>}
+
+          <section className="project-register-section">
+            <h4>Información general</h4>
+            <div className="projects-editor-grid">
+              <label>
+                <span>Proyecto <b>*</b></span>
+                <input onChange={(event) => updateForm("name", event.target.value)} placeholder="Ej. Portal web corporativo" value={form.name} />
+              </label>
+              <label>
+                <span>Cliente <b>*</b></span>
+                <select onChange={(event) => updateClient(event.target.value)} value={form.clientId}>
+                  <option value="">Seleccionar cliente</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>{client.businessName || client.legalName}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Servicio <b>*</b></span>
+                <select onChange={(event) => updateForm("service", event.target.value)} value={form.service}>
+                  <option value="">Seleccionar servicio</option>
+                  {serviceOptions.map((service) => <option key={service}>{service}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Responsable <b>*</b></span>
+                <input onChange={(event) => updateForm("manager", event.target.value)} placeholder="Ej. Responsable interno" value={form.manager} />
+              </label>
+              <label>
+                <span>Entrega <b>*</b></span>
+                <input onChange={(event) => updateForm("dueDate", event.target.value)} type="date" value={form.dueDate} />
+              </label>
+              <label>
+                <span>Presupuesto</span>
+                <input onChange={(event) => updateForm("budget", event.target.value)} placeholder="Ej. $14,990 o Variable" value={form.budget} />
+              </label>
+              <label>
+                <span>Estado</span>
+                <select onChange={(event) => updateForm("status", event.target.value)} value={form.status}>
+                  {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          {form.service && (
+            <section className="project-register-section">
+              <h4>Datos para {form.service}</h4>
+              <div className="projects-editor-grid">
+                {projectFields.map((field) => (
+                  <label key={field.key}>
+                    <span>{field.label} {field.required && <b>*</b>}</span>
+                    {field.type === "select" ? (
+                      <select onChange={(event) => updateProjectDetail(field.key, event.target.value)} value={form.details[field.key] || ""}>
+                        <option value="">{field.placeholder}</option>
+                        {(field.options || []).map((option) => <option key={option}>{option}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        onChange={(event) => updateProjectDetail(field.key, event.target.value)}
+                        placeholder={field.placeholder}
+                        type={field.type || "text"}
+                        value={form.details[field.key] || ""}
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+            </section>
+          )}
+        </form>
+      </section>
+    );
   }
 
   if (editorMode === "tracking" && selectedProject) {
@@ -499,41 +740,6 @@ export default function AdminProjects() {
           <div><p>Avance promedio</p><h3>{averageProgress}%</h3><small>Calculado por entregables</small></div>
         </article>
       </div>
-
-      {editorMode === "project" && (
-        <form className="projects-editor-card" onSubmit={saveProject}>
-          <header>
-            <div>
-              <h3>{editingId ? "Editar proyecto" : "Nuevo proyecto"}</h3>
-              <p>Completa los datos generales; el avance se calculará con los entregables.</p>
-            </div>
-            <div>
-              <button className="client-register-cancel" onClick={closeEditor} type="button">Cancelar</button>
-              <button className="client-register-save" type="submit"><Save size={17} /> Guardar</button>
-            </div>
-          </header>
-          <div className="projects-editor-grid">
-            <label><span>Proyecto <b>*</b></span><input onChange={(event) => updateForm("name", event.target.value)} placeholder="Ej. Portal web corporativo" value={form.name} /></label>
-            <label><span>Cliente <b>*</b></span><input onChange={(event) => updateForm("client", event.target.value)} placeholder="Ej. Cliente principal" value={form.client} /></label>
-            <label>
-              <span>Servicio <b>*</b></span>
-              <select onChange={(event) => updateForm("service", event.target.value)} value={form.service}>
-                <option value="">Seleccionar servicio</option>
-                {serviceOptions.map((service) => <option key={service}>{service}</option>)}
-              </select>
-            </label>
-            <label><span>Responsable <b>*</b></span><input onChange={(event) => updateForm("manager", event.target.value)} placeholder="Ej. Responsable interno" value={form.manager} /></label>
-            <label><span>Entrega <b>*</b></span><input onChange={(event) => updateForm("dueDate", event.target.value)} type="date" value={form.dueDate} /></label>
-            <label><span>Presupuesto</span><input onChange={(event) => updateForm("budget", event.target.value)} placeholder="Ej. $14,990 o Variable" value={form.budget} /></label>
-            <label>
-              <span>Estado</span>
-              <select onChange={(event) => updateForm("status", event.target.value)} value={form.status}>
-                {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
-          </div>
-        </form>
-      )}
 
       {editorMode === "tracking" && selectedProject && (
         <section className="project-tracking-card">

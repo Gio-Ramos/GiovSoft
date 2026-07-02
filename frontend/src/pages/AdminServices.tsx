@@ -43,6 +43,14 @@ interface ServiceItem {
   plans: ServicePlan[];
 }
 
+interface ServiceForm {
+  name: string;
+  category: string;
+  description: string;
+  status: "active" | "inactive";
+  variablePricing: boolean;
+}
+
 interface PlanForm {
   name: string;
   description: string;
@@ -63,6 +71,14 @@ const emptyPlanForm: PlanForm = {
   currency: "MXN",
   billingCycle: "Mensual",
   status: "active",
+};
+
+const emptyServiceForm: ServiceForm = {
+  name: "",
+  category: "",
+  description: "",
+  status: "active",
+  variablePricing: false,
 };
 
 const demoServices: ServiceItem[] = [];
@@ -107,8 +123,10 @@ export default function AdminServices() {
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [openMenu, setOpenMenu] = useState("");
   const [showPlanForm, setShowPlanForm] = useState(false);
+  const [showServiceForm, setShowServiceForm] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState("");
   const [planForm, setPlanForm] = useState<PlanForm>(emptyPlanForm);
+  const [serviceForm, setServiceForm] = useState<ServiceForm>(emptyServiceForm);
   const [message, setMessage] = useState("");
 
   useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
@@ -149,6 +167,43 @@ export default function AdminServices() {
       [field]: value,
       ...(field === "priceMode" && value === "variable" ? { billingCycle: "Variable", price: "" } : {}),
     }));
+  }
+
+  function updateServiceForm(field: keyof ServiceForm, value: string | boolean) {
+    setServiceForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function openNewService() {
+    setShowPlanForm(false);
+    setOpenMenu("");
+    setServiceForm(emptyServiceForm);
+    setMessage("");
+    setShowServiceForm(true);
+  }
+
+  function saveService(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!serviceForm.name || !serviceForm.category || !serviceForm.description) {
+      setMessage("Completa nombre, categoría y descripción del servicio.");
+      return;
+    }
+
+    const service: ServiceItem = {
+      id: crypto.randomUUID(),
+      name: serviceForm.name,
+      category: serviceForm.category,
+      description: serviceForm.description,
+      status: serviceForm.status,
+      variablePricing: serviceForm.variablePricing,
+      plans: [],
+    };
+
+    setServices((current) => [service, ...current]);
+    setSelectedServiceId(service.id);
+    setServiceForm(emptyServiceForm);
+    setShowServiceForm(false);
+    setMessage("Servicio creado correctamente. Ahora puedes agregar sus planes o valores variables.");
   }
 
   function openNewPlan() {
@@ -255,9 +310,9 @@ export default function AdminServices() {
           <p>Administra el catálogo comercial, planes y precios variables por servicio.</p>
         </div>
         <div className="clients-head-actions">
-          <button className="clients-primary-action" onClick={openNewPlan} type="button">
+          <button className="clients-primary-action" onClick={openNewService} type="button">
             <Plus size={20} />
-            Nuevo plan
+            Nuevo servicio
           </button>
           <button className="clients-action-caret" type="button">
             <ChevronRight size={18} />
@@ -266,6 +321,61 @@ export default function AdminServices() {
       </div>
 
       {message && <p className={message.includes("Completa") || message.includes("Agrega") ? "admin-form-error" : "admin-form-success"}>{message}</p>}
+
+      {showServiceForm && (
+        <form className="services-new-form" onSubmit={saveService}>
+          <header>
+            <div>
+              <h3>Nuevo servicio</h3>
+              <p>Registra el servicio base; después agrega planes, precio fijo o valor variable.</p>
+            </div>
+            <div>
+              <button className="client-register-cancel" onClick={() => setShowServiceForm(false)} type="button">Cancelar</button>
+              <button className="client-register-save" type="submit"><Save size={17} /> Guardar servicio</button>
+            </div>
+          </header>
+          <div className="services-new-grid">
+            <label>
+              <span>Nombre del servicio <b>*</b></span>
+              <input onChange={(event) => updateServiceForm("name", event.target.value)} placeholder="Ej. Registro de dominio" value={serviceForm.name} />
+            </label>
+            <label>
+              <span>Categoría <b>*</b></span>
+              <select onChange={(event) => updateServiceForm("category", event.target.value)} value={serviceForm.category}>
+                <option value="">Seleccionar categoría</option>
+                <option>Web y ecommerce</option>
+                <option>Dominios y DNS</option>
+                <option>Correos y Workspace</option>
+                <option>Infraestructura</option>
+                <option>Consultoría</option>
+              </select>
+            </label>
+            <label>
+              <span>Estado</span>
+              <select onChange={(event) => updateServiceForm("status", event.target.value)} value={serviceForm.status}>
+                <option value="active">Activo</option>
+                <option value="inactive">Inactivo</option>
+              </select>
+            </label>
+            <label className="services-new-check">
+              <input
+                checked={serviceForm.variablePricing}
+                onChange={(event) => updateServiceForm("variablePricing", event.target.checked)}
+                type="checkbox"
+              />
+              Permite valor variable
+            </label>
+            <label className="services-new-wide">
+              <span>Descripción <b>*</b></span>
+              <textarea
+                onChange={(event) => updateServiceForm("description", event.target.value)}
+                placeholder="Describe alcance, condiciones, datos necesarios o entregables principales..."
+                value={serviceForm.description}
+              />
+            </label>
+          </div>
+        </form>
+      )}
 
       <div className="clients-stats-grid">
         <article className="clients-stat-card">
