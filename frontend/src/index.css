@@ -5255,6 +5255,7 @@ body:has(.app-shell),
 }
 
 .project-register-page {
+  align-items: start;
   display: grid;
   gap: 1rem;
 }
@@ -5371,7 +5372,8 @@ body:has(.app-shell),
 }
 
 .projects-editor-card.is-register-view {
-  min-height: calc(100vh - 8rem);
+  align-self: start;
+  min-height: 0;
 }
 
 .projects-editor-card > header {
@@ -5803,6 +5805,149 @@ body:has(.app-shell),
   background: #eef2ff;
   border-color: #d7e0ff;
   color: #3f63ff;
+}
+
+.billing-action-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.billing-action-grid button {
+  align-items: start;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid #e7edf7;
+  border-radius: 1rem;
+  box-shadow: 0 12px 40px rgba(16, 32, 56, 0.05);
+  color: #26344b;
+  display: grid;
+  gap: 0.55rem;
+  min-height: 7.2rem;
+  padding: 1.15rem;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.billing-action-grid button:hover {
+  border-color: #cfd9ff;
+  box-shadow: 0 18px 46px rgba(63, 99, 255, 0.11);
+  transform: translateY(-1px);
+}
+
+.billing-action-grid span {
+  align-items: center;
+  background: #eef2ff;
+  border-radius: 0.75rem;
+  color: #4169ff;
+  display: inline-flex;
+  height: 2.75rem;
+  justify-content: center;
+  width: 2.75rem;
+}
+
+.billing-action-grid strong {
+  color: #101c31;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.billing-action-grid small {
+  color: #64738c;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.billing-entry-form {
+  border-bottom: 1px solid #edf1f7;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 1.25rem 1.5rem;
+}
+
+.billing-entry-form.is-recurring {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.billing-entry-form.is-collection {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.billing-entry-form label {
+  color: #6f7d94;
+  display: grid;
+  font-weight: 900;
+  gap: 0.45rem;
+}
+
+.billing-entry-form label span {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.billing-entry-form b {
+  color: #ff4f58;
+}
+
+.billing-entry-form input,
+.billing-entry-form select {
+  background: white;
+  border: 1px solid #dce5f2;
+  border-radius: 0.55rem;
+  color: #26344b;
+  font: inherit;
+  font-weight: 800;
+  min-height: 3.05rem;
+  padding: 0 0.85rem;
+  width: 100%;
+}
+
+.billing-entry-form select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #7b8aa2 50%),
+    linear-gradient(135deg, #7b8aa2 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.05rem) 50%,
+    calc(100% - 0.72rem) 50%;
+  background-repeat: no-repeat;
+  background-size: 0.38rem 0.38rem;
+  padding-right: 2.35rem;
+}
+
+.billing-entry-wide {
+  grid-column: span 2;
+}
+
+.billing-entry-actions {
+  align-items: end;
+  display: flex;
+  gap: 0.7rem;
+  justify-content: flex-end;
+}
+
+.billing-entry-actions button {
+  align-items: center;
+  border-radius: 0.55rem;
+  display: inline-flex;
+  font-weight: 900;
+  gap: 0.5rem;
+  justify-content: center;
+  min-height: 3.05rem;
+  padding: 0 1rem;
+}
+
+.billing-entry-actions button:first-child {
+  background: white;
+  border: 1px solid #dce5f2;
+  color: #26344b;
+}
+
+.billing-entry-actions button:last-child {
+  background: linear-gradient(135deg, #5265ff 0%, #2f70ff 100%);
+  color: white;
 }
 
 .billing-table-toolbar {
