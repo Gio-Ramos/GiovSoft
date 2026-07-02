@@ -61,17 +61,20 @@ const menuSections = [
 interface Props {
   collapsed: boolean;
   darkMode: boolean;
+  mobileOpen: boolean;
+  onNavigate: () => void;
   setDarkMode: Dispatch<SetStateAction<boolean>>;
 }
 
-export default function Sidebar({ collapsed, darkMode, setDarkMode }: Props) {
+export default function Sidebar({ collapsed, darkMode, mobileOpen, onNavigate, setDarkMode }: Props) {
   const DashboardIcon = dashboardItem.icon;
+  const compact = collapsed && !mobileOpen;
 
   return (
-    <aside className={`sidebar-shell ${collapsed ? "is-collapsed" : ""}`}>
+    <aside className={`sidebar-shell ${compact ? "is-collapsed" : ""} ${mobileOpen ? "is-mobile-open" : ""}`}>
       <div className="sidebar-brand">
         <span className="sidebar-brand-logo">
-          <img src={collapsed ? "/img/logo-icon.svg" : "/img/logo-black.svg"} alt="GiovSoft" />
+          <img src={compact ? "/img/logo-icon.svg" : "/img/logo-black.svg"} alt="GiovSoft" />
         </span>
       </div>
 
@@ -79,15 +82,16 @@ export default function Sidebar({ collapsed, darkMode, setDarkMode }: Props) {
         <NavLink
           className={({ isActive }) => `sidebar-link sidebar-dashboard-link ${isActive ? "is-active" : ""}`}
           end
+          onClick={onNavigate}
           to={dashboardItem.path}
         >
           <DashboardIcon size={20} />
-          {!collapsed && <span>{dashboardItem.name}</span>}
+          {!compact && <span>{dashboardItem.name}</span>}
         </NavLink>
 
         {menuSections.map((section) => (
           <div className="sidebar-section" key={section.title}>
-            {!collapsed && <p className="sidebar-section-title">{section.title}</p>}
+            {!compact && <p className="sidebar-section-title">{section.title}</p>}
 
             {section.items.map((item) => {
               const Icon = item.icon;
@@ -97,10 +101,11 @@ export default function Sidebar({ collapsed, darkMode, setDarkMode }: Props) {
                   key={item.name}
                   className={({ isActive }) => `sidebar-link ${isActive ? "is-active" : ""}`}
                   end={item.path === "/admin"}
+                  onClick={onNavigate}
                   to={item.path}
                 >
                   <Icon size={20} />
-                  {!collapsed && <span>{item.name}</span>}
+                  {!compact && <span>{item.name}</span>}
                 </NavLink>
               );
             })}
@@ -108,7 +113,7 @@ export default function Sidebar({ collapsed, darkMode, setDarkMode }: Props) {
         ))}
       </nav>
 
-      {!collapsed && (
+      {!compact && (
         <button
           className={`sidebar-theme-toggle ${darkMode ? "is-active" : ""}`}
           type="button"

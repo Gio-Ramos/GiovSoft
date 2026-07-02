@@ -2213,6 +2213,10 @@ body:has(.app-shell),
   width: 18.5rem;
 }
 
+.sidebar-mobile-backdrop {
+  display: none;
+}
+
 .sidebar-shell.is-collapsed {
   flex-basis: 5rem;
   width: 5rem;
@@ -11374,4 +11378,441 @@ body:has(.app-shell),
     min-height: 10.5rem;
   }
 
+}
+
+@media (max-width: 1200px) {
+  .header-main {
+    min-width: 0;
+  }
+
+  .header-breadcrumb {
+    gap: 0.55rem;
+  }
+
+  .header-profile {
+    min-width: 0;
+  }
+
+  .clients-stats-grid,
+  .audit-security-grid,
+  .billing-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-main-grid,
+  .project-tracking-grid,
+  .support-grid,
+  .services-admin-grid,
+  .roles-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .client-register-grid,
+  .company-register-grid,
+  .users-create-layout,
+  .settings-grid,
+  .reports-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .services-new-grid,
+  .services-plan-form,
+  .projects-editor-grid,
+  .project-deliverable-form,
+  .billing-entry-form,
+  .billing-entry-form.is-recurring,
+  .billing-entry-form.is-collection {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .services-new-wide,
+  .services-plan-wide,
+  .project-deliverable-wide,
+  .billing-entry-wide {
+    grid-column: 1 / -1;
+  }
+
+  .billing-data-table,
+  .clients-data-table,
+  .users-data-table,
+  .companies-data-table,
+  .projects-data-table,
+  .services-plans-table,
+  .roles-list-table,
+  .audit-data-table,
+  .tickets-data-table {
+    min-width: 86rem;
+  }
+}
+
+@media (max-width: 900px) {
+  html:has(.app-shell) {
+    font-size: 82%;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  .sidebar-shell {
+    display: none;
+  }
+
+  .sidebar-shell.is-mobile-open {
+    display: flex;
+    flex-basis: auto;
+    height: 100dvh;
+    left: 0;
+    max-height: 100dvh;
+    max-width: 22rem;
+    padding: 1.35rem 1rem;
+    position: fixed;
+    top: 0;
+    transform: translateX(0);
+    width: min(86vw, 22rem);
+    z-index: 80;
+  }
+
+  .sidebar-shell.is-mobile-open .sidebar-brand {
+    justify-content: flex-start;
+    padding-inline: 0.35rem;
+  }
+
+  .sidebar-shell.is-mobile-open .sidebar-brand-logo {
+    display: block;
+    height: auto;
+    width: auto;
+  }
+
+  .sidebar-shell.is-mobile-open .sidebar-brand-logo img {
+    height: 2rem;
+    max-width: 10.6rem;
+    width: auto;
+  }
+
+  .sidebar-shell.is-mobile-open .sidebar-link {
+    justify-content: flex-start;
+    padding-inline: 0.72rem;
+  }
+
+  .sidebar-shell.is-mobile-open .sidebar-nav {
+    gap: 1.1rem;
+    padding-inline: 0.15rem;
+  }
+
+  .sidebar-mobile-backdrop {
+    background: rgba(5, 12, 22, 0.48);
+    border: 0;
+    display: block;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    position: fixed;
+    transition: opacity 160ms ease;
+    z-index: 70;
+  }
+
+  .app-shell.is-mobile-menu-open .sidebar-mobile-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .app-content {
+    height: 100vh;
+    min-height: 100vh;
+    width: 100%;
+  }
+
+  .header-bar {
+    min-height: 4.9rem;
+    padding: 0.8rem 1rem;
+  }
+
+  .header-breadcrumb {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-breadcrumb span:not(:first-child),
+  .breadcrumb-separator {
+    display: none;
+  }
+
+  .header-actions {
+    flex: 0 0 auto;
+    gap: 0.35rem;
+  }
+
+  .profile-copy,
+  .profile-chevron {
+    display: none;
+  }
+
+  .profile-button {
+    gap: 0;
+    padding: 0;
+  }
+
+  .profile-avatar {
+    height: 2.8rem;
+    width: 2.8rem;
+  }
+
+  .header-dropdown {
+    max-width: calc(100vw - 1.5rem);
+    min-width: min(19rem, calc(100vw - 1.5rem));
+    position: fixed;
+    right: 0.75rem;
+    top: 4.85rem;
+  }
+
+  .page-content {
+    padding: 1rem;
+  }
+
+  .clients-page-head,
+  .dashboard-hero,
+  .services-detail-head,
+  .services-plans-toolbar,
+  .settings-panel header,
+  .reports-panel header,
+  .support-panel header,
+  .projects-editor-card > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .clients-head-actions,
+  .projects-editor-card > header > div:last-child,
+  .services-detail-head > div,
+  .services-plans-toolbar {
+    width: 100%;
+  }
+
+  .clients-head-actions button,
+  .clients-primary-action,
+  .client-register-save,
+  .client-register-cancel,
+  .services-status-button,
+  .services-plans-toolbar button {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .clients-table-toolbar,
+  .projects-table-toolbar,
+  .billing-table-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .clients-table-search {
+    grid-column: 1 / -1;
+  }
+
+  .clients-filter-button,
+  .clients-download-button {
+    min-width: 0;
+  }
+
+  .billing-tabs {
+    overflow-x: auto;
+    padding-inline: 1rem;
+    scrollbar-width: none;
+  }
+
+  .billing-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .billing-tabs button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .clients-table-card,
+  .companies-table-card,
+  .users-table-card,
+  .projects-table-card,
+  .billing-table-card,
+  .receipts-table-card,
+  .roles-table-card,
+  .services-plans-wrap {
+    overflow: hidden;
+  }
+
+  .clients-table-wrap,
+  .users-table-wrap,
+  .roles-list-table-wrap,
+  .services-plans-wrap {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .billing-entry-actions,
+  .services-plan-actions,
+  .client-register-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .billing-entry-actions button,
+  .services-plan-actions button,
+  .client-register-actions button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  html:has(.app-shell) {
+    font-size: 86%;
+  }
+
+  .page-content {
+    padding: 0.75rem;
+  }
+
+  .header-bar {
+    gap: 0.5rem;
+    padding-inline: 0.75rem;
+  }
+
+  .header-menu-button,
+  .icon-button,
+  .notification-button {
+    height: 2.55rem;
+    width: 2.55rem;
+  }
+
+  .header-breadcrumb {
+    font-size: 0.92rem;
+    max-width: 34vw;
+  }
+
+  .clients-page-head h2 {
+    font-size: 2rem;
+  }
+
+  .clients-page-head p,
+  .projects-editor-card > header p {
+    line-height: 1.45;
+  }
+
+  .clients-stats-grid,
+  .audit-security-grid,
+  .billing-action-grid,
+  .settings-form-grid,
+  .integrations-grid,
+  .reports-grid,
+  .support-channel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .clients-stat-card,
+  .billing-action-grid button,
+  .audit-security-grid article {
+    min-height: auto;
+  }
+
+  .clients-table-toolbar,
+  .projects-table-toolbar,
+  .billing-table-toolbar,
+  .services-new-grid,
+  .services-plan-form,
+  .projects-editor-grid,
+  .project-deliverable-form,
+  .billing-entry-form,
+  .billing-entry-form.is-recurring,
+  .billing-entry-form.is-collection,
+  .client-register-grid,
+  .company-register-grid,
+  .users-create-grid,
+  .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .billing-entry-form,
+  .billing-entry-form.is-recurring,
+  .billing-entry-form.is-collection,
+  .project-deliverable-form {
+    padding: 1rem;
+  }
+
+  .clients-table-toolbar,
+  .projects-table-toolbar,
+  .billing-table-toolbar {
+    padding: 1rem;
+  }
+
+  .billing-data-table,
+  .clients-data-table,
+  .users-data-table,
+  .companies-data-table,
+  .projects-data-table,
+  .services-plans-table,
+  .roles-list-table,
+  .audit-data-table,
+  .tickets-data-table {
+    min-width: 74rem;
+  }
+
+  .clients-data-table th,
+  .clients-data-table td,
+  .users-data-table th,
+  .users-data-table td,
+  .companies-data-table th,
+  .companies-data-table td,
+  .projects-data-table th,
+  .projects-data-table td,
+  .billing-data-table th,
+  .billing-data-table td,
+  .services-plans-table th,
+  .services-plans-table td,
+  .roles-list-table th,
+  .roles-list-table td {
+    padding: 0.9rem 1rem;
+  }
+
+  .clients-data-table th:last-child,
+  .clients-data-table td:last-child,
+  .companies-data-table th:last-child,
+  .companies-data-table td:last-child,
+  .users-data-table th:last-child,
+  .users-data-table td:last-child,
+  .projects-data-table th:last-child,
+  .projects-data-table td:last-child,
+  .billing-data-table th:last-child,
+  .billing-data-table td:last-child,
+  .roles-list-table th:last-child,
+  .roles-list-table td:last-child,
+  .services-plans-table th:last-child,
+  .services-plans-table td:last-child {
+    min-width: 5.4rem;
+  }
+
+  .project-tracking-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .support-channel-card,
+  .support-queue-item {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .support-channel-icon {
+    height: 2.55rem;
+    width: 2.55rem;
+  }
+
+  .support-channel-status,
+  .support-queue-actions {
+    justify-self: start;
+  }
+
+  .header-dropdown {
+    left: 0.75rem;
+    min-width: auto;
+    right: 0.75rem;
+  }
 }

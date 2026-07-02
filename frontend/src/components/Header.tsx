@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from "react";
 import { AlertTriangle, Bell, BookOpenCheck, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, LifeBuoy, LogOut, Menu, User, UserRoundCog } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -6,10 +5,10 @@ import { useAuth } from "../lib/auth";
 
 interface Props {
   collapsed: boolean;
-  setCollapsed: Dispatch<SetStateAction<boolean>>;
+  onMenuButtonClick: () => void;
 }
 
-export default function Header({ collapsed, setCollapsed }: Props) {
+export default function Header({ collapsed, onMenuButtonClick }: Props) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { logout, user } = useAuth();
@@ -53,9 +52,10 @@ export default function Header({ collapsed, setCollapsed }: Props) {
       <div className="header-bar">
         <div className="header-main">
           <button
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={onMenuButtonClick}
             className="header-menu-button"
             aria-label="Alternar menu lateral"
+            aria-pressed={collapsed}
           >
             <Menu size={24} />
           </button>
