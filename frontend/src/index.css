@@ -7829,6 +7829,19 @@ body:has(.app-shell),
   gap: 1.35rem;
 }
 
+.site-mobile-menu-button {
+  align-items: center;
+  background: var(--site-surface);
+  border: 1px solid var(--site-border-strong);
+  border-radius: 999px;
+  box-shadow: var(--site-card-shadow);
+  color: var(--site-heading);
+  display: inline-flex;
+  height: 2.75rem;
+  justify-content: center;
+  width: 2.75rem;
+}
+
 .nav-dropdown {
   position: relative;
 }
@@ -7915,6 +7928,16 @@ body:has(.app-shell),
 
 .site-nav a:hover {
   color: var(--site-heading);
+}
+
+.site-nav .site-academy-link {
+  background: var(--site-accent-soft);
+  border: 1px solid var(--site-border-strong);
+  border-radius: 999px;
+  color: var(--site-accent);
+  font-weight: 900;
+  min-height: 2.45rem;
+  padding: 0.62rem 0.95rem;
 }
 
 .site-header-actions {
@@ -10930,6 +10953,80 @@ body:has(.app-shell),
 }
 
 @media (max-width: 767px) {
+  .site-header {
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .site-brand {
+    width: min(11.25rem, 48vw);
+  }
+
+  .site-brand img {
+    height: 3rem;
+  }
+
+  .site-header-actions {
+    gap: 0.5rem;
+  }
+
+  .site-nav-action {
+    display: none;
+  }
+
+  .site-nav.is-open {
+    background: color-mix(in srgb, var(--site-surface) 96%, transparent);
+    border: 1px solid var(--site-border);
+    border-radius: 0.9rem;
+    box-shadow: var(--site-card-shadow-hover);
+    display: grid;
+    gap: 0.25rem;
+    left: 1rem;
+    padding: 0.75rem;
+    position: absolute;
+    right: 1rem;
+    top: calc(100% + 0.55rem);
+    z-index: 45;
+  }
+
+  .site-nav.is-open > a,
+  .site-nav.is-open .nav-dropdown-trigger {
+    align-items: center;
+    border-radius: 0.65rem;
+    display: flex;
+    min-height: 3rem;
+    padding: 0 0.85rem;
+  }
+
+  .site-nav.is-open > a:hover,
+  .site-nav.is-open .nav-dropdown-trigger:hover {
+    background: var(--site-accent-soft);
+  }
+
+  .site-nav.is-open .site-academy-link {
+    justify-content: center;
+    margin-top: 0.25rem;
+  }
+
+  .site-nav.is-open .services-menu {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    display: grid;
+    left: auto;
+    min-width: 0;
+    opacity: 1;
+    padding: 0.15rem 0 0.35rem 0.75rem;
+    pointer-events: auto;
+    position: static;
+    transform: none;
+  }
+
+  .site-nav.is-open .services-menu a {
+    padding: 0.7rem 0.75rem;
+  }
+
   .modal-backdrop {
     align-items: stretch;
     padding: 0.75rem;
@@ -11075,6 +11172,10 @@ body:has(.app-shell),
 
   .site-nav {
     display: inline-flex;
+  }
+
+  .site-mobile-menu-button {
+    display: none;
   }
 
   .site-hero {

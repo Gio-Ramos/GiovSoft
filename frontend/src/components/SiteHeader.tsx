@@ -1,4 +1,5 @@
-import { ArrowRight, Moon, Sun } from "lucide-react";
+import { ArrowRight, Menu, Moon, Sun, X } from "lucide-react";
+import { useState } from "react";
 import { serviceItems } from "../data/services";
 
 const whatsappMessage = encodeURIComponent(
@@ -12,9 +13,15 @@ interface SiteHeaderProps {
 }
 
 export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function closeMenu() {
+    setMenuOpen(false);
+  }
+
   return (
-    <header className="site-header">
-      <a className="site-brand" href="/" aria-label="GiovSoft inicio">
+    <header className={`site-header ${menuOpen ? "is-menu-open" : ""}`}>
+      <a className="site-brand" href="/" aria-label="GiovSoft inicio" onClick={closeMenu}>
         <img
           className="site-logo site-logo-light"
           src="/img/logo-white.svg"
@@ -28,10 +35,10 @@ export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
         />
       </a>
 
-      <nav className="site-nav" aria-label="Navegación principal">
-        <a href="/">Inicio</a>
+      <nav className={`site-nav ${menuOpen ? "is-open" : ""}`} aria-label="Navegación principal">
+        <a href="/" onClick={closeMenu}>Inicio</a>
         <div className="nav-dropdown">
-          <a href="/#servicios" className="nav-dropdown-trigger">
+          <a href="/#servicios" className="nav-dropdown-trigger" onClick={closeMenu}>
             Servicios
           </a>
           <div className="services-menu">
@@ -39,7 +46,7 @@ export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
               const Icon = service.icon;
 
               return (
-                <a key={service.slug} href={`/servicios/${service.slug}`}>
+                <a key={service.slug} href={`/servicios/${service.slug}`} onClick={closeMenu}>
                   <Icon size={18} />
                   <span>
                     <strong>{service.title}</strong>
@@ -50,8 +57,9 @@ export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
             })}
           </div>
         </div>
-        <a href="/#proceso">Proceso</a>
-        <a href="/contacto">Contacto</a>
+        <a href="/#proceso" onClick={closeMenu}>Proceso</a>
+        <a href="/contacto" onClick={closeMenu}>Contacto</a>
+        <a className="site-academy-link" href="https://academy.giovsoft.com" target="_blank" rel="noreferrer" onClick={closeMenu}>Academy</a>
       </nav>
 
       <div className="site-header-actions">
@@ -63,6 +71,16 @@ export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
           title={isDark ? "Modo claro" : "Modo oscuro"}
         >
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
+
+        <button
+          className="site-mobile-menu-button"
+          type="button"
+          onClick={() => setMenuOpen((current) => !current)}
+          aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
+          aria-expanded={menuOpen}
+        >
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
 
         <a
