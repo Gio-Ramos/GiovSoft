@@ -28,6 +28,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<LoginResult>;
   verifyTwoFactor: (challengeId: string, code: string) => Promise<LoginResult>;
   changePassword: (newPassword: string, currentPassword?: string) => Promise<LoginResult>;
+  updateUser: (user: AdminUser) => void;
   logout: () => void;
 }
 
@@ -123,6 +124,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           return { ok: false, message: "No se pudo conectar con el servidor." };
         }
+      },
+      updateUser(nextUser) {
+        if (token) {
+          setAdminSession(token, nextUser);
+        }
+        setUser(nextUser);
       },
       logout() {
         clearAdminSession();

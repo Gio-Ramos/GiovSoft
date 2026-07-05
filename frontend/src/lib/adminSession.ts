@@ -8,6 +8,8 @@ export interface AdminUser {
   role: string;
   status: string;
   isMaster?: boolean;
+  avatarId?: string;
+  profileImage?: string;
   passwordChangeRequired: boolean;
   createdAt?: string;
   updatedAt?: string;

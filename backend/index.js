@@ -228,6 +228,8 @@ function publicAdminUser(user) {
     status: user.status,
     isMaster: Boolean(user.isMaster),
     passwordChangeRequired: Boolean(user.passwordChangeRequired),
+    avatarId: user.metadata?.avatarId || "",
+    profileImage: user.metadata?.profileImage || "",
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     lastLoginAt: user.lastLoginAt || "",
@@ -733,10 +735,13 @@ async function ensureDatabase() {
       password_change_required BOOLEAN NOT NULL DEFAULT TRUE,
       is_master BOOLEAN NOT NULL DEFAULT FALSE,
       passkeys JSONB NOT NULL DEFAULT '[]'::jsonb,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ
     );
+
+    ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
     CREATE INDEX IF NOT EXISTS idx_admin_users_email
       ON admin_users (email);
@@ -1105,6 +1110,7 @@ function mapAdminUserRow(row) {
     passwordChangeRequired: Boolean(row.password_change_required),
     isMaster: Boolean(row.is_master),
     passkeys: safeArray(row.passkeys),
+    metadata: sanitizePlainObject(row.metadata),
     createdAt: toIsoDate(row.created_at),
     updatedAt: toIsoDate(row.updated_at),
     lastLoginAt: toIsoDate(row.last_login_at),
@@ -1316,9 +1322,9 @@ async function writeAdminUsers(users) {
           `
             INSERT INTO admin_users (
               id, name, email, role, status, password_hash, password_change_required,
-              is_master, passkeys, created_at, updated_at, last_login_at
+              is_master, passkeys, metadata, created_at, updated_at, last_login_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13)
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
               email = EXCLUDED.email,
@@ -1328,6 +1334,7 @@ async function writeAdminUsers(users) {
               password_change_required = EXCLUDED.password_change_required,
               is_master = EXCLUDED.is_master,
               passkeys = EXCLUDED.passkeys,
+              metadata = EXCLUDED.metadata,
               created_at = EXCLUDED.created_at,
               updated_at = EXCLUDED.updated_at,
               last_login_at = EXCLUDED.last_login_at
@@ -1342,6 +1349,7 @@ async function writeAdminUsers(users) {
             Boolean(user.passwordChangeRequired),
             Boolean(user.isMaster),
             JSON.stringify(safeArray(user.passkeys)),
+            JSON.stringify(sanitizePlainObject(user.metadata)),
             user.createdAt || new Date().toISOString(),
             user.updatedAt || new Date().toISOString(),
             user.lastLoginAt || null,
@@ -1774,6 +1782,59 @@ app.post("/api/admin/login/passkey/start", (_req, res) => {
 });
 
 app.use("/api/admin", requireAdminAuth);
+
+app.get("/api/admin/profile", (req, res) => {
+  return res.json({ user: publicAdminUser(req.adminUser) });
+});
+
+app.patch("/api/admin/profile", async (req, res, next) => {
+  try {
+    const name = sanitizeText(req.body?.name || req.adminUser.name);
+    const avatarId = sanitizeText(req.body?.avatarId || req.adminUser.metadata?.avatarId || "bot");
+    const profileImage = sanitizeText(req.body?.profileImage || "");
+
+    if (!name) {
+      return res.status(400).json({ message: "El nombre es requerido." });
+    }
+
+    if (profileImage && !profileImage.startsWith("data:image/")) {
+      return res.status(400).json({ message: "La foto de perfil debe ser una imagen válida." });
+    }
+
+    if (profileImage.length > 750000) {
+      return res.status(400).json({ message: "La foto de perfil no debe superar 500 KB aproximadamente." });
+    }
+
+    const users = await readAdminUsers();
+    const userIndex = users.findIndex((item) => item.id === req.adminUser.id);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ message: "Usuario no encontrado." });
+    }
+
+    const currentMetadata = sanitizePlainObject(users[userIndex].metadata);
+    const updatedUser = {
+      ...users[userIndex],
+      name,
+      metadata: {
+        ...currentMetadata,
+        avatarId,
+        profileImage,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    users[userIndex] = updatedUser;
+    await writeAdminUsers(users);
+
+    return res.json({
+      message: "Perfil actualizado.",
+      user: publicAdminUser(updatedUser),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 app.post("/api/admin/change-password", async (req, res, next) => {
   try {
