@@ -1,6 +1,7 @@
-import { AlertTriangle, Bell, BookOpenCheck, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, LifeBuoy, LogOut, Menu, User, UserRoundCog } from "lucide-react";
+import { AlertTriangle, Bell, BookOpenCheck, Bot, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, LifeBuoy, LogOut, Menu, UserRoundCog } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 import { useAuth } from "../lib/auth";
 
 interface Props {
@@ -13,6 +14,7 @@ export default function Header({ collapsed, onMenuButtonClick }: Props) {
   const navigate = useNavigate();
   const { logout, user } = useAuth();
   const [activeMenu, setActiveMenu] = useState<"notifications" | "help" | "profile" | "">("");
+  useCloseOnOutsideClick(Boolean(activeMenu), () => setActiveMenu(""));
   const sectionByPath: Record<string, { current: string; next?: string }> = {
     "/admin": { current: "Dashboard" },
     "/admin/solicitudes": { current: "Solicitudes" },
@@ -106,7 +108,7 @@ export default function Header({ collapsed, onMenuButtonClick }: Props) {
           <div className="header-menu-wrap">
             <button className="profile-button" aria-expanded={activeMenu === "profile"} aria-label="Perfil" onClick={() => toggleMenu("profile")} type="button">
               <span className="profile-avatar">
-                <User size={16} />
+                <Bot size={19} />
               </span>
               <span className="profile-copy">
                 <strong>{user?.name || "GiovSoft"}</strong>
@@ -119,7 +121,7 @@ export default function Header({ collapsed, onMenuButtonClick }: Props) {
                 <strong>{user?.name || "GiovSoft"}</strong>
                 <span>{user?.email || "admin@giovsoft.com"}</span>
               </header>
-              <button onClick={() => navigate("/admin/perfil")} type="button"><UserRoundCog size={17} /><span><strong>Mi perfil</strong><small>Datos personales, foto y avatar.</small></span></button>
+              <button onClick={() => { setActiveMenu(""); navigate("/admin/perfil"); }} type="button"><UserRoundCog size={17} /><span><strong>Mi perfil</strong><small>Datos personales, foto y avatar.</small></span></button>
               <button className="is-danger" onClick={handleLogout} type="button"><LogOut size={17} /><span><strong>Cerrar sesión</strong><small>Salir del panel.</small></span></button>
             </div>
           </div>

@@ -5,6 +5,11 @@ const actionMenuSelector = [
   ".users-action-menu",
   ".clients-row-action",
   ".users-row-action",
+  ".header-menu-wrap",
+  ".header-dropdown",
+  ".profile-button",
+  ".icon-button",
+  ".notification-button",
 ].join(",");
 
 export function useCloseOnOutsideClick(isOpen: boolean, onClose: () => void) {

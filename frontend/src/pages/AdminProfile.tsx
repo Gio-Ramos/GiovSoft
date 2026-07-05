@@ -1,27 +1,24 @@
 import type { ChangeEvent } from "react";
-import { Camera, CheckCircle2, Mail, Save, ShieldCheck, Upload, UserRoundCog } from "lucide-react";
-import { useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import { Bot, BotMessageSquare, BrainCircuit, Camera, CheckCircle2, CircuitBoard, Cpu, Mail, Save, ShieldCheck, Sparkles, Upload, UserRoundCog } from "lucide-react";
+import { useState } from "react";
 import { useAuth } from "../lib/auth";
 
-const avatarOptions = [
-  { id: "blue", label: "Azul", className: "is-blue" },
-  { id: "green", label: "Verde", className: "is-green" },
-  { id: "purple", label: "Morado", className: "is-purple" },
-  { id: "orange", label: "Naranja", className: "is-orange" },
-  { id: "dark", label: "Oscuro", className: "is-dark" },
-  { id: "sky", label: "Cielo", className: "is-sky" },
+const avatarOptions: { id: string; label: string; className: string; Icon: LucideIcon }[] = [
+  { id: "bot", label: "Robot", className: "is-blue", Icon: Bot },
+  { id: "assistant", label: "Asistente", className: "is-green", Icon: BotMessageSquare },
+  { id: "circuit", label: "Circuito", className: "is-purple", Icon: CircuitBoard },
+  { id: "neural", label: "Neural", className: "is-orange", Icon: BrainCircuit },
+  { id: "core", label: "Núcleo", className: "is-dark", Icon: Cpu },
+  { id: "spark", label: "Spark", className: "is-sky", Icon: Sparkles },
 ];
 
 export default function AdminProfile() {
   const { user } = useAuth();
-  const [selectedAvatar, setSelectedAvatar] = useState("blue");
+  const [selectedAvatar, setSelectedAvatar] = useState("bot");
   const [profileImage, setProfileImage] = useState("");
   const [message, setMessage] = useState("");
-
-  const initials = useMemo(() => {
-    const name = user?.name || "GiovSoft";
-    return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-  }, [user?.name]);
+  const SelectedAvatarIcon = avatarOptions.find((avatar) => avatar.id === selectedAvatar)?.Icon || Bot;
 
   function handleImage(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -56,7 +53,7 @@ export default function AdminProfile() {
             {profileImage ? (
               <img alt="Foto de perfil" src={profileImage} />
             ) : (
-              <span className={`profile-avatar-option ${avatarOptions.find((avatar) => avatar.id === selectedAvatar)?.className || "is-blue"}`}>{initials}</span>
+              <span className={`profile-avatar-option ${avatarOptions.find((avatar) => avatar.id === selectedAvatar)?.className || "is-blue"}`}><SelectedAvatarIcon size={46} /></span>
             )}
             <label className="profile-upload-button">
               <Camera size={18} />
@@ -84,7 +81,7 @@ export default function AdminProfile() {
           <div className="profile-avatar-grid">
             {avatarOptions.map((avatar) => (
               <button className={selectedAvatar === avatar.id ? "is-selected" : ""} key={avatar.id} onClick={() => { setSelectedAvatar(avatar.id); setProfileImage(""); }} type="button">
-                <span className={`profile-avatar-option ${avatar.className}`}>{initials}</span>
+                <span className={`profile-avatar-option ${avatar.className}`}><avatar.Icon size={24} /></span>
                 <small>{avatar.label}</small>
               </button>
             ))}
