@@ -1,5 +1,5 @@
 import { ArrowRight, ChevronDown, Menu, Moon, Sun, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { serviceItems } from "../data/services";
 
 const whatsappMessage = encodeURIComponent(
@@ -13,11 +13,34 @@ interface SiteHeaderProps {
 }
 
 export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
+  const headerRef = useRef<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileSections, setMobileSections] = useState({
     main: true,
     services: false,
   });
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+
+      if (target instanceof Node && headerRef.current?.contains(target)) {
+        return;
+      }
+
+      setMenuOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, [menuOpen]);
 
   function closeMenu() {
     setMenuOpen(false);
@@ -31,7 +54,7 @@ export default function SiteHeader({ isDark, toggleTheme }: SiteHeaderProps) {
   }
 
   return (
-    <header className={`site-header ${menuOpen ? "is-menu-open" : ""}`}>
+    <header ref={headerRef} className={`site-header ${menuOpen ? "is-menu-open" : ""}`}>
       <a className="site-brand" href="/" aria-label="GiovSoft inicio" onClick={closeMenu}>
         <img
           className="site-logo site-logo-light"
