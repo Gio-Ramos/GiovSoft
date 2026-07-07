@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   Boxes,
   BriefcaseBusiness,
   Building2,
@@ -6,6 +7,7 @@ import {
   Clock3,
   FileBarChart,
   FileCheck2,
+  FileSignature,
   Home,
   MessageCircle,
   Moon,
@@ -35,6 +37,7 @@ const menuSections = [
     title: "Productos",
     items: [
       { name: "Servicios", icon: Boxes, path: "/admin/servicios" },
+      { name: "Aplicaciones", icon: AppWindow, path: "/admin/aplicaciones" },
       { name: "Proyectos", icon: BriefcaseBusiness, path: "/admin/proyectos" },
     ],
   },
@@ -42,6 +45,7 @@ const menuSections = [
     title: "Operaciones",
     items: [
       { name: "Facturación", icon: ReceiptText, path: "/admin/facturacion" },
+      { name: "Cotizaciones", icon: FileSignature, path: "/admin/cotizaciones" },
       { name: "Comprobantes", icon: FileCheck2, path: "/admin/comprobantes" },
       { name: "Tickets", icon: MessageCircle, path: "/admin/tickets" },
       { name: "Soporte", icon: CircleHelp, path: "/admin/soporte" },

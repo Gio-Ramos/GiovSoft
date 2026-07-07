@@ -3,15 +3,19 @@ require("dotenv").config();
 const cors = require("cors");
 const crypto = require("crypto");
 const express = require("express");
+const fsSync = require("fs");
 const fs = require("fs/promises");
 const nodemailer = require("nodemailer");
 const path = require("path");
+const PDFDocument = require("pdfkit");
 const { Pool } = require("pg");
+const SVGtoPDF = require("svg-to-pdfkit");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 const allowedOrigins = (
-  process.env.FRONTEND_ORIGIN || "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:8080"
+  process.env.FRONTEND_ORIGIN ||
+  "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5180,http://localhost:5181,http://admin.localhost:5181,http://localhost:8080"
 )
   .split(",")
   .map((origin) => origin.trim());
@@ -19,7 +23,11 @@ const dataDir = path.join(__dirname, "data");
 const requestsFile = path.join(dataDir, "contact-requests.json");
 const clientsFile = path.join(dataDir, "clients.json");
 const adminUsersFile = path.join(dataDir, "admin-users.json");
+const quotesFile = path.join(dataDir, "quotes.json");
+const applicationsFile = path.join(dataDir, "connected-applications.json");
 const logoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-white.svg");
+const quoteLogoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-black.svg");
+const giovsoftLegalName = "GiovSoft Technologies, S.A.S.";
 const adminEmail = process.env.ADMIN_EMAIL || "contacto@giovsoft.com";
 const adminPassword = process.env.ADMIN_PASSWORD || "GiovSoft2026!";
 const adminName = process.env.ADMIN_NAME || "Giovanni Ramos";
@@ -92,6 +100,9 @@ const requestStatuses = {
   converted: "Cliente convertido",
   lost: "Perdida",
 };
+
+const quoteStatuses = new Set(["draft", "sent", "accepted", "rejected", "expired", "cancelled"]);
+const applicationStatuses = new Set(["active", "pending", "paused", "error"]);
 
 app.use(
   cors({
@@ -541,6 +552,296 @@ function buildTwoFactorEmail({ user, code, expiresAt }) {
   };
 }
 
+function formatMoney(value, currency = "MXN") {
+  return new Intl.NumberFormat("es-MX", {
+    currency,
+    maximumFractionDigits: 2,
+    style: "currency",
+  }).format(Number(value || 0));
+}
+
+function formatDateLabel(value) {
+  if (!value) {
+    return "Sin vigencia";
+  }
+
+  return new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString("es-MX", {
+    dateStyle: "long",
+  });
+}
+
+function buildQuoteEmail(quote) {
+  const totalLabel = formatMoney(quote.total, quote.currency);
+
+  return {
+    subject: `Cotización ${quote.folio} - GiovSoft`,
+    text: [
+      `Hola ${quote.clientName},`,
+      "",
+      "Te compartimos la cotización solicitada. Encontrarás el PDF adjunto con el desglose de conceptos, impuestos y total.",
+      "",
+      `Folio: ${quote.folio}`,
+      `Vigencia: ${formatDateLabel(quote.validUntil)}`,
+      `Total: ${totalLabel}`,
+      "",
+      "Si tienes dudas o quieres ajustar el alcance, responde este correo y con gusto te apoyamos.",
+      "",
+      "GiovSoft",
+    ].join("\n"),
+    html: buildEmailLayout({
+      title: "Tu cotización está lista",
+      preheader: `Cotización ${quote.folio} por ${totalLabel}.`,
+      badge: "Propuesta comercial",
+      intro:
+        "Preparamos la cotización solicitada con el desglose de conceptos, impuestos y total. El documento PDF viene adjunto en este correo.",
+      summaryRows: [
+        { label: "Cliente", value: quote.clientName },
+        { label: "Folio", value: quote.folio },
+        { label: "Vigencia", value: formatDateLabel(quote.validUntil) },
+        { label: "Subtotal", value: formatMoney(quote.subtotal, quote.currency) },
+        { label: "IVA", value: formatMoney(quote.tax, quote.currency) },
+        { label: "Total", value: totalLabel },
+      ],
+      ctaLabel: "Contactar por WhatsApp",
+      ctaUrl: "https://wa.me/525566042994",
+      footerNote:
+        quote.notes || "Esta cotización puede ajustarse de acuerdo con alcance, tiempos de entrega o requerimientos adicionales.",
+    }),
+  };
+}
+
+function drawQuoteLogo(doc, x, y, width = 158) {
+  const logoHeight = width * (80 / 315);
+  const logoSvg = fsSync.readFileSync(quoteLogoPath, "utf8");
+
+  SVGtoPDF(doc, logoSvg, x, y, {
+    assumePt: true,
+    height: logoHeight,
+    preserveAspectRatio: "xMinYMin meet",
+    width,
+  });
+
+  doc
+    .fillColor("#d8e4f2")
+    .fontSize(6.5)
+    .text(giovsoftLegalName, x + 42, y + logoHeight - 4, { width: width - 42 });
+}
+
+function drawQuoteFooter(doc, quote) {
+  doc
+    .save()
+    .moveTo(46, 704)
+    .lineTo(566, 704)
+    .strokeColor("#e5edf6")
+    .lineWidth(1)
+    .stroke()
+    .fontSize(8)
+    .fillColor("#94a3b8")
+    .text(`${giovsoftLegalName} · Innovación a tu alcance · contacto@giovsoft.com · Folio ${quote.folio}`, 46, 716, {
+      align: "center",
+      width: 520,
+    })
+    .restore();
+}
+
+function drawQuoteTableHeader(doc, y) {
+  const columns = {
+    description: 64,
+    quantity: 306,
+    unitPrice: 352,
+    tax: 436,
+    total: 496,
+  };
+
+  doc
+    .roundedRect(46, y, 520, 30, 9)
+    .fill("#eef5ff")
+    .fillColor("#536680")
+    .fontSize(8)
+    .text("CONCEPTO", columns.description, y + 11, { width: 222 })
+    .text("CANT.", columns.quantity, y + 11, { align: "right", width: 42 })
+    .text("PRECIO", columns.unitPrice, y + 11, { align: "right", width: 66 })
+    .text("IVA", columns.tax, y + 11, { align: "right", width: 44 })
+    .text("TOTAL", columns.total, y + 11, { align: "right", width: 52 });
+
+  return columns;
+}
+
+function createQuotePdf(quote) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 46, size: "LETTER" });
+    const chunks = [];
+
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const issuedAt = formatDateLabel(quote.createdAt || new Date().toISOString());
+    const validUntil = formatDateLabel(quote.validUntil);
+
+    doc.rect(0, 0, 612, 150).fill("#071525");
+    doc.circle(545, 44, 72).fillOpacity(0.16).fill("#29acff").fillOpacity(1);
+    doc.circle(536, 42, 40).lineWidth(1).strokeColor("#1b5f86").stroke();
+    drawQuoteLogo(doc, 54, 36, 154);
+
+    doc
+      .fillColor("#7de2c6")
+      .fontSize(9)
+      .text("PROPUESTA COMERCIAL", 388, 42, { align: "right", width: 178 })
+      .fillColor("#ffffff")
+      .fontSize(26)
+      .text("COTIZACIÓN", 344, 58, { align: "right", width: 222 })
+      .fillColor("#b8c6d7")
+      .fontSize(9)
+      .text(`Folio ${quote.folio}`, 388, 94, { align: "right", width: 178 });
+
+    doc
+      .roundedRect(46, 118, 520, 76, 12)
+      .fillAndStroke("#ffffff", "#dce7f3")
+      .fillColor("#6b7d94")
+      .fontSize(8)
+      .text("CLIENTE", 66, 138)
+      .text("FECHA", 324, 138)
+      .text("VIGENCIA", 448, 138)
+      .fillColor("#0f172a")
+      .fontSize(15)
+      .text(quote.clientName, 66, 154, { ellipsis: true, width: 220 })
+      .fontSize(10)
+      .fillColor("#64748b")
+      .text(quote.clientEmail || "Sin correo registrado", 66, 174, { ellipsis: true, width: 220 })
+      .fillColor("#0f172a")
+      .fontSize(10)
+      .text(issuedAt, 324, 156, { width: 94 })
+      .text(validUntil, 448, 156, { width: 94 });
+
+    doc
+      .fillColor("#0f172a")
+      .fontSize(13)
+      .text("Detalle de la propuesta", 46, 224)
+      .fillColor("#64748b")
+      .fontSize(9)
+      .text("Importes expresados en pesos mexicanos, salvo que se indique otra moneda.", 46, 244);
+
+    let y = 272;
+    let columns = drawQuoteTableHeader(doc, y);
+    y += 42;
+
+    const items = safeArray(quote.items);
+    if (items.length === 0) {
+      doc.fillColor("#64748b").fontSize(10).text("Sin partidas registradas.", 64, y);
+      y += 30;
+    }
+
+    for (const item of items) {
+      if (y > 636) {
+        drawQuoteFooter(doc, quote);
+        doc.addPage();
+        y = 58;
+        columns = drawQuoteTableHeader(doc, y);
+        y += 42;
+      }
+
+      const rowHeight = Math.max(38, doc.heightOfString(item.description || "Concepto", { width: 222 }) + 18);
+      doc
+        .roundedRect(46, y - 10, 520, rowHeight, 8)
+        .fill("#fbfdff")
+        .fillColor("#172033")
+        .fontSize(10)
+        .text(item.description || "Concepto", columns.description, y, { width: 222 })
+        .fillColor("#334155")
+        .fontSize(9)
+        .text(String(item.quantity), columns.quantity, y, { width: 42, align: "right" })
+        .text(formatMoney(item.unitPrice, quote.currency), columns.unitPrice, y, { width: 66, align: "right" })
+        .text(`${item.taxRate}%`, columns.tax, y, { width: 44, align: "right" })
+        .fillColor("#0f172a")
+        .fontSize(10)
+        .text(formatMoney(item.total, quote.currency), columns.total, y, { width: 52, align: "right" });
+
+      y += rowHeight + 8;
+    }
+
+    const totalsTop = y > 560 ? y + 14 : 560;
+    if (totalsTop > 640) {
+      drawQuoteFooter(doc, quote);
+      doc.addPage();
+      y = 58;
+    }
+
+    const nextTotalsTop = totalsTop > 640 ? y : totalsTop;
+    doc
+      .roundedRect(330, nextTotalsTop, 236, 96, 12)
+      .fillAndStroke("#071525", "#071525")
+      .fillColor("#9fb0c4")
+      .fontSize(9)
+      .text("Subtotal", 350, nextTotalsTop + 18, { width: 88 })
+      .text("IVA", 350, nextTotalsTop + 40, { width: 88 })
+      .fillColor("#ffffff")
+      .text(formatMoney(quote.subtotal, quote.currency), 454, nextTotalsTop + 18, { align: "right", width: 86 })
+      .text(formatMoney(quote.tax, quote.currency), 454, nextTotalsTop + 40, { align: "right", width: 86 })
+      .moveTo(350, nextTotalsTop + 64)
+      .lineTo(540, nextTotalsTop + 64)
+      .strokeColor("#244059")
+      .stroke()
+      .fillColor("#7de2c6")
+      .fontSize(10)
+      .text("TOTAL", 350, nextTotalsTop + 73)
+      .fillColor("#ffffff")
+      .fontSize(16)
+      .text(formatMoney(quote.total, quote.currency), 414, nextTotalsTop + 68, { align: "right", width: 126 });
+
+    if (quote.notes) {
+      doc
+        .roundedRect(46, nextTotalsTop, 256, 96, 12)
+        .fillAndStroke("#f8fbff", "#dce7f3")
+        .fillColor("#0f172a")
+        .fontSize(11)
+        .text("Notas", 64, nextTotalsTop + 16)
+        .fillColor("#64748b")
+        .fontSize(9)
+        .text(quote.notes, 64, nextTotalsTop + 36, { height: 44, lineGap: 2, width: 220 });
+    }
+
+    drawQuoteFooter(doc, quote);
+
+    doc.end();
+  });
+}
+
+async function sendQuoteEmail(quote) {
+  if (!quote.clientEmail) {
+    return { reason: "La cotización no tiene correo de cliente.", status: "skipped" };
+  }
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    return { reason: "SMTP no configurado", status: "skipped" };
+  }
+
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const email = buildQuoteEmail(quote);
+  const logoAttachments = await getLogoAttachments();
+  const pdfBuffer = await createQuotePdf(quote);
+
+  await transporter.sendMail({
+    attachments: [
+      ...logoAttachments,
+      {
+        content: pdfBuffer,
+        contentType: "application/pdf",
+        filename: `${quote.folio}.pdf`,
+      },
+    ],
+    from,
+    html: email.html,
+    subject: email.subject,
+    text: email.text,
+    to: quote.clientEmail,
+  });
+
+  return { sentAt: new Date().toISOString(), status: "sent" };
+}
+
 async function sendTwoFactorEmail(user, code, expiresAt) {
   const transporter = createTransporter();
 
@@ -898,6 +1199,32 @@ async function ensureDatabase() {
     CREATE INDEX IF NOT EXISTS idx_invoices_status
       ON invoices (status);
 
+    CREATE TABLE IF NOT EXISTS quotes (
+      id UUID PRIMARY KEY,
+      folio TEXT NOT NULL UNIQUE,
+      client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
+      client_name TEXT NOT NULL,
+      client_email TEXT,
+      valid_until DATE,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      status TEXT NOT NULL DEFAULT 'draft',
+      subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+      tax NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total NUMERIC(12,2) NOT NULL DEFAULT 0,
+      items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      notes TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_by UUID REFERENCES admin_users (id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quotes_status
+      ON quotes (status);
+
+    CREATE INDEX IF NOT EXISTS idx_quotes_created_at
+      ON quotes (created_at DESC);
+
     CREATE TABLE IF NOT EXISTS recurring_payments (
       id UUID PRIMARY KEY,
       client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
@@ -1003,6 +1330,41 @@ async function ensureDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS connected_applications (
+      id UUID PRIMARY KEY,
+      name TEXT NOT NULL,
+      domain TEXT,
+      api_base_url TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      sso_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      webhook_secret TEXT NOT NULL,
+      login_redirect_url TEXT,
+      last_sync TIMESTAMPTZ,
+      config JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_connected_applications_status
+      ON connected_applications (status);
+
+    CREATE TABLE IF NOT EXISTS application_webhook_events (
+      id UUID PRIMARY KEY,
+      application_id UUID NOT NULL REFERENCES connected_applications (id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_application_webhook_events_app_created
+      ON application_webhook_events (application_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_application_webhook_events_type
+      ON application_webhook_events (event_type);
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id UUID PRIMARY KEY,
       user_id UUID REFERENCES admin_users (id) ON DELETE SET NULL,
@@ -1044,6 +1406,10 @@ async function ensureDatabase() {
 
 function toIsoDate(value) {
   return value ? new Date(value).toISOString() : "";
+}
+
+function toDateOnly(value) {
+  return value ? new Date(value).toISOString().slice(0, 10) : "";
 }
 
 function mapRequestRow(row, notes = [], statusHistory = []) {
@@ -1114,6 +1480,53 @@ function mapAdminUserRow(row) {
     createdAt: toIsoDate(row.created_at),
     updatedAt: toIsoDate(row.updated_at),
     lastLoginAt: toIsoDate(row.last_login_at),
+  };
+}
+
+function mapQuoteRow(row) {
+  return {
+    id: row.id,
+    folio: row.folio,
+    clientId: row.client_id || "",
+    clientName: row.client_name,
+    clientEmail: row.client_email || "",
+    validUntil: toDateOnly(row.valid_until),
+    currency: row.currency || "MXN",
+    status: row.status || "draft",
+    subtotal: Number(row.subtotal || 0),
+    tax: Number(row.tax || 0),
+    total: Number(row.total || 0),
+    items: safeArray(row.items),
+    notes: row.notes || "",
+    metadata: sanitizePlainObject(row.metadata),
+    createdBy: row.created_by || "",
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
+function mapApplicationRow(row, metrics = {}) {
+  return {
+    id: row.id,
+    name: row.name,
+    domain: row.domain || "",
+    apiBaseUrl: row.api_base_url || "",
+    status: row.status || "pending",
+    ssoEnabled: Boolean(row.sso_enabled),
+    webhookSecret: row.webhook_secret || "",
+    loginRedirectUrl: row.login_redirect_url || "",
+    lastSync: toIsoDate(row.last_sync),
+    config: sanitizePlainObject(row.config),
+    metrics: {
+      users: Number(metrics.users || 0),
+      sales: Number(metrics.sales || 0),
+      invoices: Number(metrics.invoices || 0),
+      payments: Number(metrics.payments || 0),
+      revenue: Number(metrics.revenue || 0),
+      events: Number(metrics.events || 0),
+    },
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
   };
 }
 
@@ -1212,6 +1625,26 @@ async function ensureAdminUsersFile() {
     };
 
     await fs.writeFile(adminUsersFile, JSON.stringify([seedUser], null, 2), "utf8");
+  }
+}
+
+async function ensureQuotesFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(quotesFile);
+  } catch {
+    await fs.writeFile(quotesFile, "[]", "utf8");
+  }
+}
+
+async function ensureApplicationsFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(applicationsFile);
+  } catch {
+    await fs.writeFile(applicationsFile, "[]", "utf8");
   }
 }
 
@@ -1477,6 +1910,243 @@ async function writeClients(clients) {
   await fs.writeFile(clientsFile, JSON.stringify(clients, null, 2), "utf8");
 }
 
+async function readQuotes() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const { rows } = await currentPool.query("SELECT * FROM quotes ORDER BY created_at DESC");
+    return rows.map(mapQuoteRow);
+  }
+
+  await ensureQuotesFile();
+  const raw = await fs.readFile(quotesFile, "utf8");
+  return JSON.parse(raw);
+}
+
+async function writeQuotes(quotes) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const client = await currentPool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      for (const quote of quotes) {
+        await client.query(
+          `
+            INSERT INTO quotes (
+              id, folio, client_id, client_name, client_email, valid_until, currency, status,
+              subtotal, tax, total, items, notes, metadata, created_by, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb, $15, $16, $17)
+            ON CONFLICT (id) DO UPDATE SET
+              folio = EXCLUDED.folio,
+              client_id = EXCLUDED.client_id,
+              client_name = EXCLUDED.client_name,
+              client_email = EXCLUDED.client_email,
+              valid_until = EXCLUDED.valid_until,
+              currency = EXCLUDED.currency,
+              status = EXCLUDED.status,
+              subtotal = EXCLUDED.subtotal,
+              tax = EXCLUDED.tax,
+              total = EXCLUDED.total,
+              items = EXCLUDED.items,
+              notes = EXCLUDED.notes,
+              metadata = EXCLUDED.metadata,
+              created_by = EXCLUDED.created_by,
+              created_at = EXCLUDED.created_at,
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            quote.id,
+            quote.folio,
+            quote.clientId || null,
+            quote.clientName,
+            quote.clientEmail || null,
+            quote.validUntil || null,
+            quote.currency || "MXN",
+            quote.status || "draft",
+            Number(quote.subtotal || 0),
+            Number(quote.tax || 0),
+            Number(quote.total || 0),
+            JSON.stringify(safeArray(quote.items)),
+            quote.notes || null,
+            JSON.stringify(sanitizePlainObject(quote.metadata)),
+            quote.createdBy || null,
+            quote.createdAt || new Date().toISOString(),
+            quote.updatedAt || new Date().toISOString(),
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return;
+  }
+
+  await ensureQuotesFile();
+  await fs.writeFile(quotesFile, JSON.stringify(quotes, null, 2), "utf8");
+}
+
+async function readApplications() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+
+    const [appsResult, metricsResult] = await Promise.all([
+      currentPool.query("SELECT * FROM connected_applications ORDER BY updated_at DESC"),
+      currentPool.query(`
+        SELECT
+          application_id,
+          COUNT(*)::int AS events,
+          COUNT(*) FILTER (WHERE event_type IN ('user.created', 'user.updated'))::int AS users,
+          COUNT(*) FILTER (WHERE event_type IN ('sale.created', 'order.created'))::int AS sales,
+          COUNT(*) FILTER (WHERE event_type = 'invoice.created')::int AS invoices,
+          COUNT(*) FILTER (WHERE event_type = 'payment.received')::int AS payments,
+          COALESCE(SUM(amount) FILTER (WHERE event_type IN ('sale.created', 'order.created', 'payment.received')), 0)::numeric AS revenue
+        FROM application_webhook_events
+        GROUP BY application_id
+      `),
+    ]);
+
+    const metricsByApp = new Map(metricsResult.rows.map((row) => [row.application_id, row]));
+    return appsResult.rows.map((row) => mapApplicationRow(row, metricsByApp.get(row.id)));
+  }
+
+  await ensureApplicationsFile();
+  const raw = await fs.readFile(applicationsFile, "utf8");
+  return JSON.parse(raw);
+}
+
+async function writeApplications(applications) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const client = await currentPool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      for (const application of applications) {
+        await client.query(
+          `
+            INSERT INTO connected_applications (
+              id, name, domain, api_base_url, status, sso_enabled, webhook_secret,
+              login_redirect_url, last_sync, config, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              domain = EXCLUDED.domain,
+              api_base_url = EXCLUDED.api_base_url,
+              status = EXCLUDED.status,
+              sso_enabled = EXCLUDED.sso_enabled,
+              webhook_secret = EXCLUDED.webhook_secret,
+              login_redirect_url = EXCLUDED.login_redirect_url,
+              last_sync = EXCLUDED.last_sync,
+              config = EXCLUDED.config,
+              created_at = EXCLUDED.created_at,
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            application.id,
+            application.name,
+            application.domain || null,
+            application.apiBaseUrl || null,
+            application.status || "pending",
+            application.ssoEnabled !== false,
+            application.webhookSecret,
+            application.loginRedirectUrl || null,
+            application.lastSync || null,
+            JSON.stringify(sanitizePlainObject(application.config)),
+            application.createdAt || new Date().toISOString(),
+            application.updatedAt || new Date().toISOString(),
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return;
+  }
+
+  await ensureApplicationsFile();
+  await fs.writeFile(applicationsFile, JSON.stringify(applications, null, 2), "utf8");
+}
+
+async function storeApplicationWebhookEvent(application, event) {
+  const currentPool = getPool();
+  const now = new Date().toISOString();
+
+  if (currentPool) {
+    await ensureDatabase();
+    await currentPool.query(
+      `
+        INSERT INTO application_webhook_events (
+          id, application_id, event_type, payload, amount, currency, occurred_at, created_at
+        )
+        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
+      `,
+      [
+        crypto.randomUUID(),
+        application.id,
+        event.eventType,
+        JSON.stringify(event.payload),
+        event.amount,
+        event.currency,
+        event.occurredAt,
+        now,
+      ]
+    );
+    await currentPool.query("UPDATE connected_applications SET last_sync = $1, updated_at = $1 WHERE id = $2", [now, application.id]);
+    return;
+  }
+
+  const applications = await readApplications();
+  const index = applications.findIndex((item) => item.id === application.id);
+
+  if (index === -1) {
+    return;
+  }
+
+  const currentMetrics = applications[index].metrics || {};
+  const nextMetrics = {
+    events: Number(currentMetrics.events || 0) + 1,
+    invoices: Number(currentMetrics.invoices || 0) + (event.eventType === "invoice.created" ? 1 : 0),
+    payments: Number(currentMetrics.payments || 0) + (event.eventType === "payment.received" ? 1 : 0),
+    revenue:
+      Number(currentMetrics.revenue || 0) +
+      (["sale.created", "order.created", "payment.received"].includes(event.eventType) ? Number(event.amount || 0) : 0),
+    sales: Number(currentMetrics.sales || 0) + (["sale.created", "order.created"].includes(event.eventType) ? 1 : 0),
+    users: Number(currentMetrics.users || 0) + (["user.created", "user.updated"].includes(event.eventType) ? 1 : 0),
+  };
+
+  applications[index] = {
+    ...applications[index],
+    lastSync: now,
+    metrics: nextMetrics,
+    updatedAt: now,
+  };
+  await writeApplications(applications);
+}
+
 async function writeRequests(requests) {
   const currentPool = getPool();
 
@@ -1633,6 +2303,144 @@ function sanitizePlainObject(value) {
   );
 }
 
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function buildQuoteFolio(quotes) {
+  const year = new Date().getFullYear();
+  const nextNumber =
+    safeArray(quotes).reduce((highest, quote) => {
+      const match = String(quote.folio || "").match(new RegExp(`^COT-${year}-(\\d+)$`));
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 0) + 1;
+
+  return `COT-${year}-${String(nextNumber).padStart(4, "0")}`;
+}
+
+function validateQuotePayload(body, existingQuote) {
+  const rawItems = safeArray(body.items !== undefined ? body.items : existingQuote?.items);
+  const items = rawItems
+    .map((item) => {
+      const quantity = Number(item?.quantity || 0);
+      const unitPrice = Number(item?.unitPrice || 0);
+      const taxRate = item?.taxRate === "" || item?.taxRate === undefined ? 16 : Number(item.taxRate);
+      const lineSubtotal = roundMoney(quantity * unitPrice);
+      const lineTax = roundMoney(lineSubtotal * (taxRate / 100));
+
+      return {
+        id: sanitizeText(item?.id) || crypto.randomUUID(),
+        description: sanitizeText(item?.description),
+        quantity: roundMoney(quantity),
+        unitPrice: roundMoney(unitPrice),
+        taxRate: roundMoney(taxRate),
+        subtotal: lineSubtotal,
+        tax: lineTax,
+        total: roundMoney(lineSubtotal + lineTax),
+      };
+    })
+    .filter((item) => item.description || item.quantity > 0 || item.unitPrice > 0);
+
+  const subtotal = roundMoney(items.reduce((total, item) => total + item.subtotal, 0));
+  const tax = roundMoney(items.reduce((total, item) => total + item.tax, 0));
+  const status = sanitizeText(body.status || existingQuote?.status || "draft");
+  const payload = {
+    folio: sanitizeText(body.folio || existingQuote?.folio),
+    clientId: sanitizeText(body.clientId || existingQuote?.clientId),
+    clientName: sanitizeText(body.clientName || existingQuote?.clientName),
+    clientEmail: sanitizeText(body.clientEmail || existingQuote?.clientEmail),
+    validUntil: sanitizeText(body.validUntil || existingQuote?.validUntil),
+    currency: sanitizeText(body.currency || existingQuote?.currency || "MXN"),
+    status: quoteStatuses.has(status) ? status : "draft",
+    subtotal,
+    tax,
+    total: roundMoney(subtotal + tax),
+    items,
+    notes: sanitizeText(body.notes || existingQuote?.notes),
+    metadata: sanitizePlainObject(body.metadata || existingQuote?.metadata),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (!payload.clientName) {
+    return { error: "Selecciona o captura el cliente de la cotización." };
+  }
+
+  if (payload.clientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.clientEmail)) {
+    return { error: "El correo del cliente no es válido." };
+  }
+
+  if (payload.items.length === 0 || payload.items.some((item) => !item.description || item.quantity <= 0 || item.unitPrice < 0)) {
+    return { error: "Agrega al menos una partida con concepto, cantidad y precio válido." };
+  }
+
+  return { payload };
+}
+
+function createApplicationSecret() {
+  return `gws_${crypto.randomBytes(24).toString("base64url")}`;
+}
+
+function validateApplicationPayload(body, existingApplication) {
+  const status = sanitizeText(body.status || existingApplication?.status || "pending");
+  const config = sanitizePlainObject(body.config || existingApplication?.config);
+  const payload = {
+    name: sanitizeText(body.name || existingApplication?.name),
+    domain: sanitizeText(body.domain || existingApplication?.domain),
+    apiBaseUrl: sanitizeText(body.apiBaseUrl || existingApplication?.apiBaseUrl),
+    status: applicationStatuses.has(status) ? status : "pending",
+    ssoEnabled: body.ssoEnabled !== undefined ? Boolean(body.ssoEnabled) : existingApplication?.ssoEnabled !== false,
+    webhookSecret: sanitizeText(body.webhookSecret || existingApplication?.webhookSecret || createApplicationSecret()),
+    loginRedirectUrl: sanitizeText(body.loginRedirectUrl || existingApplication?.loginRedirectUrl),
+    config: {
+      syncUsers: config.syncUsers !== false,
+      syncSales: config.syncSales !== false,
+      syncInvoices: config.syncInvoices !== false,
+      syncPayments: config.syncPayments !== false,
+      webhookMode: "webhooks",
+      authMode: "centralized_login",
+    },
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (!payload.name) {
+    return { error: "El nombre de la aplicación es requerido." };
+  }
+
+  if (!payload.apiBaseUrl) {
+    return { error: "La URL base del API es requerida." };
+  }
+
+  try {
+    new URL(payload.apiBaseUrl);
+  } catch (_error) {
+    return { error: "La URL base del API no es válida." };
+  }
+
+  if (payload.loginRedirectUrl) {
+    try {
+      new URL(payload.loginRedirectUrl);
+    } catch (_error) {
+      return { error: "La URL de login/retorno no es válida." };
+    }
+  }
+
+  return { payload };
+}
+
+function sanitizeWebhookEvent(body) {
+  const eventType = sanitizeText(body.eventType || body.type);
+  const payload = sanitizePlainObject(body.data || body.payload || {});
+  const amount = roundMoney(body.amount || payload.amount || payload.total || 0);
+  const currency = sanitizeText(body.currency || payload.currency || "MXN");
+  const occurredAt = sanitizeText(body.occurredAt || body.createdAt) || new Date().toISOString();
+
+  if (!eventType) {
+    return { error: "El tipo de evento es requerido." };
+  }
+
+  return { payload: { amount, currency, eventType, occurredAt, payload } };
+}
+
 function validateClientPayload(body, existingClient) {
   const now = new Date().toISOString();
   const payload = {
@@ -1779,6 +2587,34 @@ app.post("/api/admin/login/passkey/start", (_req, res) => {
   return res.status(501).json({
     message: "Las llaves de seguridad y llavero de iCloud requieren registrar una passkey desde el perfil del usuario.",
   });
+});
+
+app.post("/api/webhooks/applications/:id", async (req, res, next) => {
+  try {
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === req.params.id && item.status === "active");
+
+    if (!application) {
+      return res.status(404).json({ message: "Aplicación no encontrada o inactiva." });
+    }
+
+    const webhookSecret = req.get("x-giovsoft-webhook-secret") || "";
+
+    if (!webhookSecret || webhookSecret !== application.webhookSecret) {
+      return res.status(401).json({ message: "Webhook no autorizado." });
+    }
+
+    const validation = sanitizeWebhookEvent(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    await storeApplicationWebhookEvent(application, validation.payload);
+    return res.status(202).json({ message: "Evento recibido.", eventType: validation.payload.eventType });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 app.use("/api/admin", requireAdminAuth);
@@ -2142,6 +2978,276 @@ app.patch("/api/admin/clients/:id", async (req, res, next) => {
     res.json({ message: "Cliente actualizado.", client: updatedClient });
   } catch (error) {
     next(error);
+  }
+});
+
+app.get("/api/admin/quotes", async (_req, res, next) => {
+  try {
+    const [quotes, clients] = await Promise.all([readQuotes(), readClients()]);
+    return res.json({ quotes, clients });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/quotes", async (req, res, next) => {
+  try {
+    const quotes = await readQuotes();
+    const validation = validateQuotePayload(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const now = new Date().toISOString();
+    const quote = {
+      id: crypto.randomUUID(),
+      ...validation.payload,
+      folio: validation.payload.folio || buildQuoteFolio(quotes),
+      createdBy: req.adminUser?.id || "",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (quotes.some((item) => item.folio === quote.folio)) {
+      return res.status(409).json({ message: "Ya existe una cotización con ese folio." });
+    }
+
+    let emailResult = { status: "skipped", reason: "Envío no solicitado." };
+    if (req.body?.sendEmail !== false) {
+      if (!quote.clientEmail) {
+        return res.status(400).json({ message: "Agrega el correo del cliente para enviar la cotización." });
+      }
+
+      try {
+        emailResult = await sendQuoteEmail(quote);
+        quote.metadata = {
+          ...sanitizePlainObject(quote.metadata),
+          emailStatus: emailResult.status,
+          emailStatusDetail: emailResult.reason || emailResult.sentAt,
+          lastEmailSentAt: emailResult.sentAt || "",
+        };
+        if (emailResult.status === "sent") {
+          quote.status = "sent";
+        }
+      } catch (emailError) {
+        console.error("Error enviando cotización:", emailError);
+        quote.metadata = {
+          ...sanitizePlainObject(quote.metadata),
+          emailStatus: "failed",
+          emailStatusDetail: "No se pudo enviar la cotización por correo.",
+        };
+      }
+    }
+
+    quotes.unshift(quote);
+    await writeQuotes(quotes);
+
+    return res.status(201).json({
+      email: quote.metadata?.emailStatus || emailResult.status,
+      message:
+        req.body?.sendEmail === false
+          ? "Cotización guardada como borrador."
+          : quote.metadata?.emailStatus === "sent"
+          ? "Cotización creada y enviada al cliente."
+          : "Cotización creada. Revisa la configuración SMTP para el envío automático.",
+      quote,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.patch("/api/admin/quotes/:id", async (req, res, next) => {
+  try {
+    const quotes = await readQuotes();
+    const quoteIndex = quotes.findIndex((quote) => quote.id === req.params.id);
+
+    if (quoteIndex === -1) {
+      return res.status(404).json({ message: "Cotización no encontrada." });
+    }
+
+    const validation = validateQuotePayload(req.body, quotes[quoteIndex]);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const updatedQuote = {
+      ...quotes[quoteIndex],
+      ...validation.payload,
+      createdAt: quotes[quoteIndex].createdAt,
+      createdBy: quotes[quoteIndex].createdBy || req.adminUser?.id || "",
+    };
+
+    if (quotes.some((quote) => quote.id !== updatedQuote.id && quote.folio === updatedQuote.folio)) {
+      return res.status(409).json({ message: "Ya existe una cotización con ese folio." });
+    }
+
+    if (req.body?.sendEmail === true) {
+      if (!updatedQuote.clientEmail) {
+        return res.status(400).json({ message: "Agrega el correo del cliente para enviar la cotización." });
+      }
+
+      try {
+        const emailResult = await sendQuoteEmail(updatedQuote);
+        updatedQuote.metadata = {
+          ...sanitizePlainObject(updatedQuote.metadata),
+          emailStatus: emailResult.status,
+          emailStatusDetail: emailResult.reason || emailResult.sentAt,
+          lastEmailSentAt: emailResult.sentAt || "",
+        };
+        if (emailResult.status === "sent") {
+          updatedQuote.status = "sent";
+        }
+      } catch (emailError) {
+        console.error("Error enviando cotización:", emailError);
+        updatedQuote.metadata = {
+          ...sanitizePlainObject(updatedQuote.metadata),
+          emailStatus: "failed",
+          emailStatusDetail: "No se pudo enviar la cotización por correo.",
+        };
+      }
+    }
+
+    quotes[quoteIndex] = updatedQuote;
+    await writeQuotes(quotes);
+
+    return res.json({
+      message:
+        req.body?.sendEmail === false
+          ? "Cotización guardada como borrador."
+          : updatedQuote.metadata?.emailStatus === "sent"
+          ? "Cotización actualizada y enviada al cliente."
+          : "Cotización actualizada. Revisa la configuración SMTP para el envío automático.",
+      quote: updatedQuote,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/quotes/:id/pdf", async (req, res, next) => {
+  try {
+    const quotes = await readQuotes();
+    const quote = quotes.find((item) => item.id === req.params.id);
+
+    if (!quote) {
+      return res.status(404).json({ message: "Cotización no encontrada." });
+    }
+
+    const pdfBuffer = await createQuotePdf(quote);
+    const dispositionType = req.query.download === "1" ? "attachment" : "inline";
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `${dispositionType}; filename="${quote.folio}.pdf"`);
+    res.setHeader("Content-Length", pdfBuffer.length);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/quotes/:id/send", async (req, res, next) => {
+  try {
+    const quotes = await readQuotes();
+    const quoteIndex = quotes.findIndex((quote) => quote.id === req.params.id);
+
+    if (quoteIndex === -1) {
+      return res.status(404).json({ message: "Cotización no encontrada." });
+    }
+
+    const quote = quotes[quoteIndex];
+    const emailResult = await sendQuoteEmail(quote);
+    const updatedQuote = {
+      ...quote,
+      status: emailResult.status === "sent" ? "sent" : quote.status,
+      metadata: {
+        ...sanitizePlainObject(quote.metadata),
+        emailStatus: emailResult.status,
+        emailStatusDetail: emailResult.reason || emailResult.sentAt,
+        lastEmailSentAt: emailResult.sentAt || "",
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    quotes[quoteIndex] = updatedQuote;
+    await writeQuotes(quotes);
+
+    return res.json({
+      message: emailResult.status === "sent" ? "Cotización enviada al cliente." : "No se pudo enviar la cotización.",
+      quote: updatedQuote,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/applications", async (_req, res, next) => {
+  try {
+    const applications = await readApplications();
+    return res.json({ applications });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/applications", async (req, res, next) => {
+  try {
+    const validation = validateApplicationPayload(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const applications = await readApplications();
+    const now = new Date().toISOString();
+    const application = {
+      id: crypto.randomUUID(),
+      ...validation.payload,
+      createdAt: now,
+      lastSync: "",
+      metrics: { events: 0, invoices: 0, payments: 0, revenue: 0, sales: 0, users: 0 },
+      updatedAt: now,
+    };
+
+    applications.unshift(application);
+    await writeApplications(applications);
+
+    return res.status(201).json({ application, message: "Aplicación conectada creada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.patch("/api/admin/applications/:id", async (req, res, next) => {
+  try {
+    const applications = await readApplications();
+    const applicationIndex = applications.findIndex((application) => application.id === req.params.id);
+
+    if (applicationIndex === -1) {
+      return res.status(404).json({ message: "Aplicación no encontrada." });
+    }
+
+    const validation = validateApplicationPayload(req.body, applications[applicationIndex]);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const updatedApplication = {
+      ...applications[applicationIndex],
+      ...validation.payload,
+      createdAt: applications[applicationIndex].createdAt,
+      metrics: applications[applicationIndex].metrics,
+    };
+
+    applications[applicationIndex] = updatedApplication;
+    await writeApplications(applications);
+
+    return res.json({ application: updatedApplication, message: "Aplicación actualizada." });
+  } catch (error) {
+    return next(error);
   }
 });
 

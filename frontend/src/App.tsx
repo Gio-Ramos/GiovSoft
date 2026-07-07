@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
+import AdminApplications from "./pages/AdminApplications";
 import AdminAudit from "./pages/AdminAudit";
 import AdminClients from "./pages/AdminClients";
 import AdminCompanies from "./pages/AdminCompanies";
@@ -10,6 +11,7 @@ import AdminBilling from "./pages/AdminBilling";
 import AdminIntegrations from "./pages/AdminIntegrations";
 import AdminProfile from "./pages/AdminProfile";
 import AdminProjects from "./pages/AdminProjects";
+import AdminQuotes from "./pages/AdminQuotes";
 import AdminReceipts from "./pages/AdminReceipts";
 import AdminRequests from "./pages/AdminRequests";
 import AdminRoles from "./pages/AdminRoles";
@@ -126,6 +128,16 @@ function App() {
           }
         />
         <Route
+          path="/admin/aplicaciones"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminApplications />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
           path="/admin/proyectos"
           element={
             <ProtectedAdminRoute>
@@ -151,6 +163,36 @@ function App() {
             <ProtectedAdminRoute>
               <Layout>
                 <AdminBilling />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/cotizaciones"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminQuotes />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/cotizaciones/nueva"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminQuotes />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/cotizaciones/:quoteId/editar"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminQuotes />
               </Layout>
             </ProtectedAdminRoute>
           }

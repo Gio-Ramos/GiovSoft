@@ -28,8 +28,11 @@ export default function Header({ collapsed, onMenuButtonClick }: Props) {
     "/admin/roles-permisos": { current: "Roles y permisos" },
     "/admin/productos": { current: "Productos" },
     "/admin/proyectos": { current: "Proyectos" },
+    "/admin/aplicaciones": { current: "Aplicaciones" },
     "/admin/planes": { current: "Planes" },
     "/admin/facturacion": { current: "Facturación" },
+    "/admin/cotizaciones": { current: "Cotizaciones" },
+    "/admin/cotizaciones/nueva": { current: "Cotizaciones", next: "Nueva cotización" },
     "/admin/comprobantes": { current: "Comprobantes" },
     "/admin/tickets": { current: "Tickets" },
     "/admin/soporte": { current: "Soporte" },
@@ -38,7 +41,10 @@ export default function Header({ collapsed, onMenuButtonClick }: Props) {
     "/admin/perfil": { current: "Mi perfil" },
     "/admin/restablecer-contrasena": { current: "Restablecer contraseña" },
   };
-  const breadcrumb = sectionByPath[pathname] || { current: "Panel GiovSoft" };
+  const breadcrumb =
+    pathname.startsWith("/admin/cotizaciones/") && pathname.endsWith("/editar")
+      ? { current: "Cotizaciones", next: "Editar cotización" }
+      : sectionByPath[pathname] || { current: "Panel GiovSoft" };
 
   function toggleMenu(menu: "notifications" | "help" | "profile") {
     setActiveMenu((current) => (current === menu ? "" : menu));
