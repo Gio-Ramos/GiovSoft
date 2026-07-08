@@ -6167,16 +6167,126 @@ body:has(.app-shell),
 }
 
 .quotes-card .clients-table-wrap {
-  overflow: visible;
-  padding-bottom: 0;
+  min-height: 15rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.8rem;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quotes-table-wrap::-webkit-scrollbar {
+  height: 0.72rem;
+}
+
+.quotes-table-wrap::-webkit-scrollbar-track {
+  background: #eef3fa;
+  border-radius: 999px;
+}
+
+.quotes-table-wrap::-webkit-scrollbar-thumb {
+  background: #aeb8c8;
+  border-radius: 999px;
+}
+
+.quotes-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: #8795aa;
 }
 
 .quotes-card .clients-action-menu {
   bottom: auto;
+  margin: 0;
   min-width: 12.5rem;
-  right: 1.25rem;
-  top: calc(50% + 1.45rem);
+  position: absolute;
+  right: 0.6rem;
+  top: calc(100% + 0.55rem);
   z-index: 500;
+}
+
+.quotes-floating-action-menu {
+  bottom: auto !important;
+  max-height: calc(100vh - 1.5rem);
+  min-width: 14.4rem;
+  overflow-y: auto;
+  position: fixed !important;
+  right: auto !important;
+  z-index: 5000;
+}
+
+.quotes-card .clients-filter-button.is-active {
+  background: #edf2ff;
+  border-color: #b9c7ff;
+  color: #4164ff;
+}
+
+.quotes-advanced-filters {
+  align-items: end;
+  border-top: 1px solid #edf1f7;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  padding: 1rem 1.25rem 1.15rem;
+}
+
+.quotes-advanced-filters label {
+  color: #6f7d94;
+  display: grid;
+  font-size: 0.85rem;
+  font-weight: 900;
+  gap: 0.45rem;
+}
+
+.quotes-advanced-filters input {
+  background: #ffffff;
+  border: 1px solid #dce5f2;
+  border-radius: 0.55rem;
+  color: #26344b;
+  font: inherit;
+  font-weight: 850;
+  min-height: 3rem;
+  padding: 0 0.9rem;
+}
+
+.quotes-clear-filters {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dce5f2;
+  border-radius: 0.55rem;
+  color: #64738c;
+  display: inline-flex;
+  font-weight: 900;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0 1rem;
+  white-space: nowrap;
+}
+
+.quotes-row-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.45rem;
+  justify-content: center;
+  min-width: 9rem;
+}
+
+.quotes-row-action-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dce5f2;
+  border-radius: 0.55rem;
+  color: #4164ff;
+  display: inline-flex;
+  height: 2.55rem;
+  justify-content: center;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  width: 2.55rem;
+}
+
+.quotes-row-action-button:hover {
+  background: #f3f6ff;
+  border-color: #bdc9ff;
+  transform: translateY(-1px);
 }
 
 .clients-secondary-action {
@@ -6471,13 +6581,132 @@ body:has(.app-shell),
 }
 
 .quotes-data-table {
-  min-width: 112rem;
+  min-width: 104rem;
+  table-layout: fixed;
+}
+
+.quotes-data-table th,
+.quotes-data-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quotes-data-table th:nth-child(1),
+.quotes-data-table td:nth-child(1) {
+  width: 10.5rem;
+}
+
+.quotes-data-table th:nth-child(2),
+.quotes-data-table td:nth-child(2) {
+  width: 28rem;
+}
+
+.quotes-data-table th:nth-child(3),
+.quotes-data-table td:nth-child(3) {
+  width: 23rem;
+}
+
+.quotes-data-table th:nth-child(4),
+.quotes-data-table td:nth-child(4) {
+  text-align: center;
+  width: 7rem;
+}
+
+.quotes-data-table th:nth-child(5),
+.quotes-data-table td:nth-child(5),
+.quotes-data-table th:nth-child(6),
+.quotes-data-table td:nth-child(6),
+.quotes-data-table th:nth-child(7),
+.quotes-data-table td:nth-child(7) {
+  width: 10rem;
+}
+
+.quotes-data-table th:nth-child(8),
+.quotes-data-table td:nth-child(8) {
+  width: 9rem;
+}
+
+.quotes-data-table th:nth-child(9),
+.quotes-data-table td:nth-child(9) {
+  width: 9rem;
+}
+
+.quotes-data-table th:nth-child(10),
+.quotes-data-table td:nth-child(10) {
+  min-width: 11rem;
+  overflow: visible;
+  width: 11rem;
 }
 
 .quotes-empty-row {
   color: #64738c !important;
   padding: 2rem 1.25rem !important;
   text-align: left !important;
+}
+
+.quotes-pagination {
+  align-items: center;
+  border-top: 1px solid #edf1f7;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+}
+
+.quotes-pagination > span {
+  color: #7a89a1;
+  font-weight: 850;
+}
+
+.quotes-pagination-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.quotes-pagination-controls button,
+.quotes-pagination-controls strong,
+.quotes-pagination-controls select {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dce5f2;
+  border-radius: 0.55rem;
+  color: #26344b;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 900;
+  min-height: 2.75rem;
+}
+
+.quotes-pagination-controls button,
+.quotes-pagination-controls strong {
+  justify-content: center;
+  width: 2.75rem;
+}
+
+.quotes-pagination-controls strong {
+  background: #4164ff;
+  border-color: #4164ff;
+  color: #ffffff;
+}
+
+.quotes-pagination-controls button:disabled {
+  color: #a8b4c6;
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.quotes-pagination-controls span {
+  color: #7a89a1;
+  font-weight: 850;
+}
+
+.quotes-pagination-controls select {
+  min-width: 10.6rem;
+  padding: 0 2.35rem 0 0.85rem;
 }
 
 .applications-module-shell {
@@ -12367,7 +12596,23 @@ body:has(.app-shell),
     grid-template-columns: 1fr 1fr;
   }
 
+  .quotes-card .billing-table-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .quotes-advanced-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quotes-clear-filters {
+    width: 100%;
+  }
+
   .clients-table-search {
+    grid-column: 1 / -1;
+  }
+
+  .quotes-card .clients-table-search {
     grid-column: 1 / -1;
   }
 
@@ -12408,6 +12653,24 @@ body:has(.app-shell),
   .services-plans-wrap {
     overflow-x: auto;
     overscroll-behavior-x: contain;
+  }
+
+  .quotes-card .quotes-table-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .quotes-card .quotes-data-table {
+    min-width: 92rem;
+  }
+
+  .quotes-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .quotes-pagination-controls {
+    justify-content: flex-start;
   }
 
   .billing-entry-actions,
@@ -12492,6 +12755,15 @@ body:has(.app-shell),
     grid-template-columns: 1fr;
   }
 
+  .quotes-card .billing-table-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .quotes-advanced-filters {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+
   .billing-entry-form,
   .billing-entry-form.is-recurring,
   .billing-entry-form.is-collection,
@@ -12515,6 +12787,21 @@ body:has(.app-shell),
   .audit-data-table,
   .tickets-data-table {
     min-width: 74rem;
+  }
+
+  .quotes-card .quotes-data-table {
+    min-width: 82rem;
+  }
+
+  .quotes-card .clients-filter-button,
+  .quotes-card .clients-download-button {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .quotes-pagination-controls select {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .clients-data-table th,

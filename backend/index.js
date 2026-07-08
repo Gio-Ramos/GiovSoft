@@ -570,8 +570,17 @@ function formatDateLabel(value) {
   });
 }
 
+function buildQuoteValidityMessage(quote) {
+  if (!quote?.validUntil) {
+    return "La vigencia de esta cotización quedará sujeta a confirmación comercial al momento de aprobar la propuesta.";
+  }
+
+  return `Esta cotización es válida hasta el ${formatDateLabel(quote.validUntil)}. Después de esta fecha, precios, tiempos de entrega y disponibilidad pueden actualizarse.`;
+}
+
 function buildQuoteEmail(quote) {
   const totalLabel = formatMoney(quote.total, quote.currency);
+  const validityMessage = buildQuoteValidityMessage(quote);
 
   return {
     subject: `Cotización ${quote.folio} - GiovSoft`,
@@ -583,6 +592,8 @@ function buildQuoteEmail(quote) {
       `Folio: ${quote.folio}`,
       `Vigencia: ${formatDateLabel(quote.validUntil)}`,
       `Total: ${totalLabel}`,
+      "",
+      validityMessage,
       "",
       "Si tienes dudas o quieres ajustar el alcance, responde este correo y con gusto te apoyamos.",
       "",
@@ -604,8 +615,7 @@ function buildQuoteEmail(quote) {
       ],
       ctaLabel: "Contactar por WhatsApp",
       ctaUrl: "https://wa.me/525566042994",
-      footerNote:
-        quote.notes || "Esta cotización puede ajustarse de acuerdo con alcance, tiempos de entrega o requerimientos adicionales.",
+      footerNote: quote.notes ? `${validityMessage} ${quote.notes}` : validityMessage,
     }),
   };
 }
@@ -789,17 +799,19 @@ function createQuotePdf(quote) {
       .fontSize(16)
       .text(formatMoney(quote.total, quote.currency), 414, nextTotalsTop + 68, { align: "right", width: 126 });
 
-    if (quote.notes) {
-      doc
-        .roundedRect(46, nextTotalsTop, 256, 96, 12)
-        .fillAndStroke("#f8fbff", "#dce7f3")
-        .fillColor("#0f172a")
-        .fontSize(11)
-        .text("Notas", 64, nextTotalsTop + 16)
-        .fillColor("#64748b")
-        .fontSize(9)
-        .text(quote.notes, 64, nextTotalsTop + 36, { height: 44, lineGap: 2, width: 220 });
-    }
+    const quoteConditions = quote.notes
+      ? `${buildQuoteValidityMessage(quote)}\n\n${quote.notes}`
+      : buildQuoteValidityMessage(quote);
+
+    doc
+      .roundedRect(46, nextTotalsTop, 256, 96, 12)
+      .fillAndStroke("#f8fbff", "#dce7f3")
+      .fillColor("#0f172a")
+      .fontSize(11)
+      .text("Condiciones", 64, nextTotalsTop + 16)
+      .fillColor("#64748b")
+      .fontSize(8.3)
+      .text(quoteConditions, 64, nextTotalsTop + 35, { height: 48, lineGap: 1.4, width: 220 });
 
     drawQuoteFooter(doc, quote);
 

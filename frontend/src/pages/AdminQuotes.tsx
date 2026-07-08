@@ -1,8 +1,10 @@
-import type { FormEvent } from "react";
+import type { FormEvent, MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Calculator,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileSignature,
   Filter,
@@ -134,7 +136,15 @@ export default function AdminQuotes() {
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
+  const [showFilters, setShowFilters] = useState(false);
+  const [validFromFilter, setValidFromFilter] = useState("");
+  const [validToFilter, setValidToFilter] = useState("");
+  const [minTotalFilter, setMinTotalFilter] = useState("");
+  const [maxTotalFilter, setMaxTotalFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [openMenu, setOpenMenu] = useState("");
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [editingId, setEditingId] = useState("");
   const [form, setForm] = useState<QuoteForm>(() => emptyForm());
   const [loadedFormId, setLoadedFormId] = useState("");
@@ -149,6 +159,37 @@ export default function AdminQuotes() {
   useEffect(() => {
     loadQuotes();
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setOpenMenu("");
+    setMenuPosition(null);
+  }, [maxTotalFilter, minTotalFilter, pageSize, query, statusFilter, validFromFilter, validToFilter]);
+
+  useEffect(() => {
+    if (!openMenu) {
+      setMenuPosition(null);
+    }
+  }, [openMenu]);
+
+  useEffect(() => {
+    if (!openMenu) {
+      return;
+    }
+
+    function closeFloatingMenu() {
+      setOpenMenu("");
+      setMenuPosition(null);
+    }
+
+    window.addEventListener("resize", closeFloatingMenu);
+    window.addEventListener("scroll", closeFloatingMenu, true);
+
+    return () => {
+      window.removeEventListener("resize", closeFloatingMenu);
+      window.removeEventListener("scroll", closeFloatingMenu, true);
+    };
+  }, [openMenu]);
 
   useEffect(() => {
     return () => {
@@ -209,15 +250,49 @@ export default function AdminQuotes() {
         !normalized ||
         `${quote.folio} ${quote.clientName} ${quote.clientEmail} ${quote.notes}`.toLowerCase().includes(normalized);
       const matchesStatus = statusFilter === "Todos" || statusLabels[quote.status] === statusFilter;
-      return matchesQuery && matchesStatus;
+      const quoteDate = quote.validUntil ? quote.validUntil.slice(0, 10) : "";
+      const matchesValidFrom = !validFromFilter || (quoteDate && quoteDate >= validFromFilter);
+      const matchesValidTo = !validToFilter || (quoteDate && quoteDate <= validToFilter);
+      const matchesMinTotal = !minTotalFilter || Number(quote.total || 0) >= Number(minTotalFilter);
+      const matchesMaxTotal = !maxTotalFilter || Number(quote.total || 0) <= Number(maxTotalFilter);
+      return matchesQuery && matchesStatus && matchesValidFrom && matchesValidTo && matchesMinTotal && matchesMaxTotal;
     });
-  }, [query, quotes, statusFilter]);
+  }, [maxTotalFilter, minTotalFilter, query, quotes, statusFilter, validFromFilter, validToFilter]);
 
   const totals = useMemo(() => calculateTotals(form.items), [form.items]);
   const quotedAmount = quotes.filter((quote) => quote.status !== "cancelled").reduce((total, quote) => total + quote.total, 0);
   const acceptedAmount = quotes.filter((quote) => quote.status === "accepted").reduce((total, quote) => total + quote.total, 0);
   const sentQuotes = quotes.filter((quote) => quote.status === "sent").length;
   const acceptedQuotes = quotes.filter((quote) => quote.status === "accepted").length;
+  const totalPages = Math.max(1, Math.ceil(filteredQuotes.length / pageSize));
+  const activePage = Math.min(currentPage, totalPages);
+  const pageStart = (activePage - 1) * pageSize;
+  const paginatedQuotes = filteredQuotes.slice(pageStart, pageStart + pageSize);
+  const displayStart = filteredQuotes.length === 0 ? 0 : pageStart + 1;
+  const displayEnd = Math.min(pageStart + paginatedQuotes.length, filteredQuotes.length);
+  const openMenuQuote = openMenu ? quotes.find((quote) => quote.id === openMenu) : undefined;
+
+  function toggleQuoteMenu(event: MouseEvent<HTMLButtonElement>, quoteId: string) {
+    if (openMenu === quoteId) {
+      setOpenMenu("");
+      setMenuPosition(null);
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 230;
+    const menuHeight = 360;
+    const viewportPadding = 12;
+    const left = Math.min(window.innerWidth - menuWidth - viewportPadding, Math.max(viewportPadding, rect.right - menuWidth));
+    const belowTop = rect.bottom + 8;
+    const top =
+      belowTop + menuHeight > window.innerHeight - viewportPadding
+        ? Math.max(viewportPadding, rect.top - menuHeight - 8)
+        : belowTop;
+
+    setMenuPosition({ left, top });
+    setOpenMenu(quoteId);
+  }
 
   function selectClient(clientId: string) {
     const selectedClient = clients.find((client) => client.id === clientId);
@@ -490,14 +565,47 @@ export default function AdminQuotes() {
               {Object.values(statusLabels).map((status) => <option key={status}>{status}</option>)}
             </select>
           </label>
-          <button className="clients-filter-button" type="button"><Filter size={18} /> Filtros</button>
+          <button className={`clients-filter-button ${showFilters ? "is-active" : ""}`} onClick={() => setShowFilters((current) => !current)} type="button"><Filter size={18} /> Filtros</button>
           <button className="clients-download-button" type="button"><Download size={18} /></button>
         </div>
-        <div className="clients-table-wrap">
+        {showFilters && (
+          <div className="quotes-advanced-filters">
+            <label>
+              Vigencia desde
+              <input onChange={(event) => setValidFromFilter(event.target.value)} type="date" value={validFromFilter} />
+            </label>
+            <label>
+              Vigencia hasta
+              <input onChange={(event) => setValidToFilter(event.target.value)} type="date" value={validToFilter} />
+            </label>
+            <label>
+              Total mínimo
+              <input min="0" onChange={(event) => setMinTotalFilter(event.target.value)} placeholder="$0.00" type="number" value={minTotalFilter} />
+            </label>
+            <label>
+              Total máximo
+              <input min="0" onChange={(event) => setMaxTotalFilter(event.target.value)} placeholder="$0.00" type="number" value={maxTotalFilter} />
+            </label>
+            <button
+              className="quotes-clear-filters"
+              onClick={() => {
+                setValidFromFilter("");
+                setValidToFilter("");
+                setMinTotalFilter("");
+                setMaxTotalFilter("");
+                setStatusFilter("Todos");
+              }}
+              type="button"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        )}
+        <div className="clients-table-wrap quotes-table-wrap">
           <table className="billing-data-table quotes-data-table">
             <thead><tr><th>Folio</th><th>Cliente</th><th>Correo</th><th>Partidas</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Vigencia</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody>
-              {filteredQuotes.map((quote) => (
+              {paginatedQuotes.map((quote) => (
                 <tr key={quote.id}>
                   <td><strong>{quote.folio}</strong></td>
                   <td>{quote.clientName}</td>
@@ -509,16 +617,10 @@ export default function AdminQuotes() {
                   <td>{formatDate(quote.validUntil)}</td>
                   <td><span className={`billing-status is-${quote.status}`}>{statusLabels[quote.status]}</span></td>
                   <td>
-                    <button className="clients-row-action" onClick={() => setOpenMenu(openMenu === quote.id ? "" : quote.id)} type="button"><MoreVertical size={20} /></button>
-                    <div className={`clients-action-menu ${openMenu === quote.id ? "is-open" : ""}`}>
-                      <button onClick={() => openEditForm(quote)} type="button">Editar</button>
-                      <button onClick={() => openPdfPreview(quote)} type="button"><Eye size={15} /> Vista previa</button>
-                      <button onClick={() => downloadPdf(quote)} type="button"><Download size={15} /> Descargar PDF</button>
-                      <button onClick={() => sendQuote(quote)} type="button"><Mail size={15} /> Enviar PDF</button>
-                      <button onClick={() => updateQuoteStatus(quote, "sent")} type="button">Marcar enviada</button>
-                      <button onClick={() => updateQuoteStatus(quote, "accepted")} type="button">Marcar aceptada</button>
-                      <button onClick={() => duplicateQuote(quote)} type="button">Duplicar</button>
-                      <button onClick={() => updateQuoteStatus(quote, "cancelled")} type="button">Cancelar</button>
+                    <div className="quotes-row-actions">
+                      <button aria-label={`Vista previa de ${quote.folio}`} className="quotes-row-action-button" onClick={() => openPdfPreview(quote)} type="button"><Eye size={17} /></button>
+                      <button aria-label={`Descargar ${quote.folio}`} className="quotes-row-action-button" onClick={() => downloadPdf(quote)} type="button"><Download size={17} /></button>
+                      <button aria-label={`Mas acciones de ${quote.folio}`} className="clients-row-action" onClick={(event) => toggleQuoteMenu(event, quote.id)} type="button"><MoreVertical size={20} /></button>
                     </div>
                   </td>
                 </tr>
@@ -531,6 +633,43 @@ export default function AdminQuotes() {
             </tbody>
           </table>
         </div>
+        {openMenuQuote && menuPosition && (
+          <div
+            className="clients-action-menu quotes-floating-action-menu is-open"
+            style={{ left: menuPosition.left, top: menuPosition.top }}
+          >
+            <button onClick={() => openEditForm(openMenuQuote)} type="button">Editar</button>
+            <button onClick={() => openPdfPreview(openMenuQuote)} type="button"><Eye size={15} /> Vista previa</button>
+            <button onClick={() => downloadPdf(openMenuQuote)} type="button"><Download size={15} /> Descargar PDF</button>
+            <button onClick={() => sendQuote(openMenuQuote)} type="button"><Mail size={15} /> Enviar PDF</button>
+            <button onClick={() => updateQuoteStatus(openMenuQuote, "sent")} type="button">Marcar enviada</button>
+            <button onClick={() => updateQuoteStatus(openMenuQuote, "accepted")} type="button">Marcar aceptada</button>
+            <button onClick={() => duplicateQuote(openMenuQuote)} type="button">Duplicar</button>
+            <button onClick={() => updateQuoteStatus(openMenuQuote, "cancelled")} type="button">Cancelar</button>
+          </div>
+        )}
+        <footer className="quotes-pagination">
+          <span>Mostrando {displayStart} a {displayEnd} de {filteredQuotes.length} cotizaciones</span>
+          <div className="quotes-pagination-controls">
+            <button aria-label="Pagina anterior" disabled={activePage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} type="button">
+              <ChevronLeft size={18} />
+            </button>
+            <strong>{activePage}</strong>
+            <span>de {totalPages}</span>
+            <button aria-label="Pagina siguiente" disabled={activePage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} type="button">
+              <ChevronRight size={18} />
+            </button>
+            <select
+              aria-label="Registros por pagina"
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              value={pageSize}
+            >
+              <option value={20}>20 por página</option>
+              <option value={50}>50 por página</option>
+              <option value={100}>100 por página</option>
+            </select>
+          </div>
+        </footer>
       </article>
 
       {previewPdfUrl && (
