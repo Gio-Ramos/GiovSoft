@@ -25,8 +25,11 @@ const clientsFile = path.join(dataDir, "clients.json");
 const adminUsersFile = path.join(dataDir, "admin-users.json");
 const quotesFile = path.join(dataDir, "quotes.json");
 const applicationsFile = path.join(dataDir, "connected-applications.json");
-const logoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-white.svg");
-const quoteLogoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-black.svg");
+const assetsDir = path.join(__dirname, "assets");
+const logoPath = path.join(assetsDir, "logo-white.svg");
+const quoteLogoPath = path.join(assetsDir, "logo-black.svg");
+const legacyLogoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-white.svg");
+const legacyQuoteLogoPath = path.join(__dirname, "..", "frontend", "public", "img", "logo-black.svg");
 const giovsoftLegalName = "GiovSoft Technologies, S.A.S.";
 const adminEmail = process.env.ADMIN_EMAIL || "contacto@giovsoft.com";
 const adminPassword = process.env.ADMIN_PASSWORD || "GiovSoft2026!";
@@ -328,19 +331,45 @@ function createTransporter() {
 }
 
 async function getLogoAttachments() {
-  try {
-    await fs.access(logoPath);
-    return [
-      {
-        filename: "giovsoft-logo.svg",
-        path: logoPath,
-        cid: "giovsoft-logo",
-        contentType: "image/svg+xml",
-      },
-    ];
-  } catch (_error) {
+  const attachmentLogoPath = await getFirstExistingPath([logoPath, legacyLogoPath]);
+
+  if (!attachmentLogoPath) {
     return [];
   }
+
+  return [
+    {
+      filename: "giovsoft-logo.svg",
+      path: attachmentLogoPath,
+      cid: "giovsoft-logo",
+      contentType: "image/svg+xml",
+    },
+  ];
+}
+
+async function getFirstExistingPath(filePaths) {
+  for (const filePath of filePaths) {
+    try {
+      await fs.access(filePath);
+      return filePath;
+    } catch (_error) {
+      // Try the next candidate path.
+    }
+  }
+
+  return "";
+}
+
+function readFirstExistingText(filePaths) {
+  for (const filePath of filePaths) {
+    try {
+      return fsSync.readFileSync(filePath, "utf8");
+    } catch (_error) {
+      // Try the next candidate path.
+    }
+  }
+
+  return "";
 }
 
 function getServiceDetail(service) {
@@ -622,13 +651,7 @@ function buildQuoteEmail(quote) {
 
 function drawQuoteLogo(doc, x, y, width = 158) {
   const logoHeight = width * (80 / 315);
-  let logoSvg = "";
-
-  try {
-    logoSvg = fsSync.readFileSync(quoteLogoPath, "utf8");
-  } catch (_error) {
-    logoSvg = "";
-  }
+  const logoSvg = readFirstExistingText([quoteLogoPath, legacyQuoteLogoPath]);
 
   if (logoSvg) {
     try {
@@ -746,7 +769,7 @@ function createQuotePdf(quote) {
       .text(`Folio ${quote.folio}`, 388, 94, { align: "right", width: 178 });
 
     doc
-      .roundedRect(46, 118, 520, 76, 12)
+      .roundedRect(46, 118, 520, 82, 12)
       .fillAndStroke("#ffffff", "#dce7f3")
       .fillColor("#6b7d94")
       .fontSize(8)
@@ -754,11 +777,11 @@ function createQuotePdf(quote) {
       .text("FECHA", 324, 138)
       .text("VIGENCIA", 448, 138)
       .fillColor("#0f172a")
-      .fontSize(15)
-      .text(quote.clientName, 66, 154, { ellipsis: true, width: 220 })
+      .fontSize(12.5)
+      .text(quote.clientName, 66, 154, { ellipsis: true, height: 33, lineGap: 1, width: 220 })
       .fontSize(10)
       .fillColor("#64748b")
-      .text(quote.clientEmail || "Sin correo registrado", 66, 174, { ellipsis: true, width: 220 })
+      .text(quote.clientEmail || "Sin correo registrado", 66, 184, { ellipsis: true, width: 220 })
       .fillColor("#0f172a")
       .fontSize(10)
       .text(issuedAt, 324, 156, { width: 94 })
