@@ -622,19 +622,59 @@ function buildQuoteEmail(quote) {
 
 function drawQuoteLogo(doc, x, y, width = 158) {
   const logoHeight = width * (80 / 315);
-  const logoSvg = fsSync.readFileSync(quoteLogoPath, "utf8");
+  let logoSvg = "";
 
-  SVGtoPDF(doc, logoSvg, x, y, {
-    assumePt: true,
-    height: logoHeight,
-    preserveAspectRatio: "xMinYMin meet",
-    width,
-  });
+  try {
+    logoSvg = fsSync.readFileSync(quoteLogoPath, "utf8");
+  } catch (_error) {
+    logoSvg = "";
+  }
+
+  if (logoSvg) {
+    try {
+      SVGtoPDF(doc, logoSvg, x, y, {
+        assumePt: true,
+        height: logoHeight,
+        preserveAspectRatio: "xMinYMin meet",
+        width,
+      });
+
+      doc
+        .fillColor("#d8e4f2")
+        .fontSize(6.5)
+        .text(giovsoftLegalName, x + 42, y + logoHeight - 4, { width: width - 42 });
+      return;
+    } catch (error) {
+      console.warn("No se pudo renderizar el logo SVG de la cotizacion:", error.message);
+    }
+  }
 
   doc
+    .save()
+    .lineWidth(3)
+    .strokeColor("#28aefb")
+    .moveTo(x + 15, y + 5)
+    .lineTo(x + 30, y + 20)
+    .lineTo(x + 15, y + 35)
+    .lineTo(x, y + 20)
+    .closePath()
+    .stroke()
+    .moveTo(x + 15, y + 10)
+    .lineTo(x + 25, y + 20)
+    .lineTo(x + 15, y + 30)
+    .lineTo(x + 5, y + 20)
+    .closePath()
+    .stroke()
+    .fillColor("#ffffff")
+    .fontSize(17)
+    .text("GiovSoft", x + 42, y + 4, { width: width - 42 })
+    .fillColor("#9fb0c4")
+    .fontSize(6.5)
+    .text("INNOVACION A TU ALCANCE", x + 42, y + 24, { width: width - 42 })
     .fillColor("#d8e4f2")
     .fontSize(6.5)
-    .text(giovsoftLegalName, x + 42, y + logoHeight - 4, { width: width - 42 });
+    .text(giovsoftLegalName, x + 42, y + 34, { width: width - 42 })
+    .restore();
 }
 
 function drawQuoteFooter(doc, quote) {
