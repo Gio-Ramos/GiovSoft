@@ -740,6 +740,19 @@ function drawQuoteTableHeader(doc, y) {
   return columns;
 }
 
+function getFittedFontSize(doc, text, { lineGap = 1, maxHeight, maxSize, minSize, width }) {
+  for (let size = maxSize; size >= minSize; size -= 0.5) {
+    doc.fontSize(size);
+    const textHeight = doc.heightOfString(text, { lineGap, width });
+
+    if (textHeight <= maxHeight) {
+      return size;
+    }
+  }
+
+  return minSize;
+}
+
 function createQuotePdf(quote) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 46, size: "LETTER" });
@@ -768,34 +781,55 @@ function createQuotePdf(quote) {
       .fontSize(9)
       .text(`Folio ${quote.folio}`, 388, 94, { align: "right", width: 178 });
 
+    const clientName = String(quote.clientName || "Cliente sin nombre");
+    const clientEmail = quote.clientEmail || "Sin correo registrado";
+    const clientBoxY = 118;
+    const clientNameWidth = 250;
+    const clientNameMaxHeight = 46;
+    const clientNameFontSize = getFittedFontSize(doc, clientName, {
+      lineGap: 1,
+      maxHeight: clientNameMaxHeight,
+      maxSize: 12.5,
+      minSize: 8.5,
+      width: clientNameWidth,
+    });
+    doc.fontSize(clientNameFontSize);
+    const clientNameHeight = Math.min(
+      doc.heightOfString(clientName, { lineGap: 1, width: clientNameWidth }),
+      clientNameMaxHeight
+    );
+    const clientEmailY = 154 + clientNameHeight + 8;
+    const clientBoxHeight = Math.max(88, clientEmailY + 18 - clientBoxY + 16);
+    const detailStartY = clientBoxY + clientBoxHeight + 30;
+
     doc
-      .roundedRect(46, 118, 520, 82, 12)
+      .roundedRect(46, clientBoxY, 520, clientBoxHeight, 12)
       .fillAndStroke("#ffffff", "#dce7f3")
       .fillColor("#6b7d94")
       .fontSize(8)
       .text("CLIENTE", 66, 138)
-      .text("FECHA", 324, 138)
-      .text("VIGENCIA", 448, 138)
+      .text("FECHA", 354, 138)
+      .text("VIGENCIA", 464, 138)
       .fillColor("#0f172a")
-      .fontSize(12.5)
-      .text(quote.clientName, 66, 154, { ellipsis: true, height: 33, lineGap: 1, width: 220 })
+      .fontSize(clientNameFontSize)
+      .text(clientName, 66, 154, { ellipsis: true, height: clientNameMaxHeight, lineGap: 1, width: clientNameWidth })
       .fontSize(10)
       .fillColor("#64748b")
-      .text(quote.clientEmail || "Sin correo registrado", 66, 184, { ellipsis: true, width: 220 })
+      .text(clientEmail, 66, clientEmailY, { ellipsis: true, width: clientNameWidth })
       .fillColor("#0f172a")
       .fontSize(10)
-      .text(issuedAt, 324, 156, { width: 94 })
-      .text(validUntil, 448, 156, { width: 94 });
+      .text(issuedAt, 354, 156, { width: 88 })
+      .text(validUntil, 464, 156, { width: 88 });
 
     doc
       .fillColor("#0f172a")
       .fontSize(13)
-      .text("Detalle de la propuesta", 46, 224)
+      .text("Detalle de la propuesta", 46, detailStartY)
       .fillColor("#64748b")
       .fontSize(9)
-      .text("Importes expresados en pesos mexicanos, salvo que se indique otra moneda.", 46, 244);
+      .text("Importes expresados en pesos mexicanos, salvo que se indique otra moneda.", 46, detailStartY + 20);
 
-    let y = 272;
+    let y = detailStartY + 48;
     let columns = drawQuoteTableHeader(doc, y);
     y += 42;
 
