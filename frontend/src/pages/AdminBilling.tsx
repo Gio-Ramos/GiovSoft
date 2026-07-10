@@ -1,609 +1,487 @@
 import type { FormEvent } from "react";
-import { CalendarClock, CreditCard, Download, FileText, Filter, MoreVertical, Plus, Save, Search, Send, WalletCards } from "lucide-react";
+import {
+  BadgeCheck,
+  Building2,
+  CheckCircle2,
+  Download,
+  FileCheck2,
+  FileText,
+  KeyRound,
+  MoreVertical,
+  Plus,
+  RotateCw,
+  Save,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  XCircle,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { api } from "../lib/api";
 import { useCloseOnOutsideClick } from "../hooks/useCloseOnOutsideClick";
 
-type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
-type BillingTab = "invoices" | "recurring" | "collections";
-type RecurringStatus = "active" | "paused" | "overdue" | "cancelled";
-type CollectionStatus = "pending" | "paid" | "partial" | "overdue";
+type SatTab = "cfdi" | "provider" | "series" | "emitter" | "validation" | "catalogs";
 
-interface InvoiceItem {
+interface Client {
   id: string;
+  businessName: string;
+  legalName?: string;
+  rfc?: string;
+  taxRegime?: string;
+  cfdiUse?: string;
+  fiscalAddress?: { postalCode?: string };
+}
+
+interface ProviderConfig {
+  name: string;
+  environment: "demo" | "production";
+  username: string;
+  secretName: string;
+  demoEndpoint: string;
+  productionEndpoint: string;
+  demoCancelEndpoint: string;
+  productionCancelEndpoint: string;
+  configured: boolean;
+  passwordConfigured?: boolean;
+  lastVerifiedAt?: string;
+}
+
+interface EmitterConfig {
+  legalName: string;
+  rfc: string;
+  taxRegime: string;
+  postalCode: string;
+  certificateStatus: string;
+}
+
+interface SatSeries {
+  id: string;
+  company: string;
+  serie: string;
+  nextFolio: number;
+  documentType: string;
+  status: string;
+}
+
+interface CfdiRecord {
+  id: string;
+  clientName: string;
   folio: string;
-  client: string;
-  concept: string;
-  amount: number;
-  status: InvoiceStatus;
-  dueDate: string;
-  issuedAt: string;
+  provider: string;
+  environment: string;
+  status: string;
+  subtotal: number;
+  tax: number;
+  total: number;
+  uuid?: string;
+  pdfBase64?: string;
+  qrBase64?: string;
+  xmlBase64?: string;
+  createdAt: string;
 }
 
-interface RecurringPayment {
-  id: string;
-  subscriptionName: string;
-  client: string;
-  service: string;
-  plan: string;
-  amount: number;
-  frequency: string;
-  paymentDay: number;
-  startedAt: string;
-  nextCharge: string;
-  renewalDate: string;
-  method: string;
-  autoInvoice: boolean;
-  status: RecurringStatus;
-  owner: string;
-  notes: string;
+interface BillingSatState {
+  provider: ProviderConfig;
+  emitter: EmitterConfig;
+  series: SatSeries[];
+  cfdis: CfdiRecord[];
+  catalogs: {
+    status: string;
+    lastSyncAt: string;
+    items: string[];
+  };
+  clients: Client[];
+  metrics: {
+    total: number;
+    issued: number;
+    cancelled: number;
+    pending: number;
+  };
 }
 
-interface CollectionItem {
-  id: string;
-  client: string;
-  concept: string;
-  expectedAmount: number;
-  paidAmount: number;
-  dueDate: string;
-  lastContact: string;
-  nextFollowUp: string;
-  status: CollectionStatus;
-  notes: string;
-}
-
-interface InvoiceForm {
-  folio: string;
-  client: string;
-  concept: string;
-  amount: string;
-  issuedAt: string;
-  dueDate: string;
-  status: InvoiceStatus;
-}
-
-interface RecurringForm {
-  subscriptionName: string;
-  client: string;
-  service: string;
-  plan: string;
-  amount: string;
-  frequency: string;
-  paymentDay: string;
-  startedAt: string;
-  nextCharge: string;
-  renewalDate: string;
-  method: string;
-  autoInvoice: boolean;
-  status: RecurringStatus;
-  owner: string;
-  notes: string;
-}
-
-interface CollectionForm {
-  client: string;
-  concept: string;
-  expectedAmount: string;
-  paidAmount: string;
-  dueDate: string;
-  lastContact: string;
-  nextFollowUp: string;
-  status: CollectionStatus;
-  notes: string;
-}
-
-const invoicesSeed: InvoiceItem[] = [];
-const recurringSeed: RecurringPayment[] = [];
-const collectionsSeed: CollectionItem[] = [];
-const invoicesStorageKey = "giovsoft-admin-invoices-v2";
-const recurringStorageKey = "giovsoft-admin-recurring-v2";
-const collectionsStorageKey = "giovsoft-admin-collections-v2";
-
-const statusLabels: Record<InvoiceStatus, string> = {
-  draft: "Borrador",
-  sent: "Emitida",
-  paid: "Pagada",
-  overdue: "Vencida",
-  cancelled: "Cancelada",
+const emptyState: BillingSatState = {
+  provider: {
+    name: "CSFacturacion",
+    environment: "demo",
+    username: "",
+    secretName: "csfacturacion-password",
+    demoEndpoint: "https://csplug.csfacturacion.com/demo/cfdi",
+    productionEndpoint: "https://csplug.csfacturacion.com/cfdi",
+    demoCancelEndpoint: "https://csplug.csfacturacion.com/demo/cfdi/cancelar",
+    productionCancelEndpoint: "https://csplug.csfacturacion.com/cfdi/cancelar",
+    configured: false,
+    passwordConfigured: false,
+  },
+  emitter: {
+    legalName: "GiovSoft Technologies, S.A.S.",
+    rfc: "",
+    taxRegime: "",
+    postalCode: "",
+    certificateStatus: "pending",
+  },
+  series: [],
+  cfdis: [],
+  catalogs: {
+    status: "pending",
+    lastSyncAt: "",
+    items: ["RegimenFiscal", "UsoCFDI", "FormaPago", "MetodoPago", "Moneda", "TipoComprobante"],
+  },
+  clients: [],
+  metrics: { cancelled: 0, issued: 0, pending: 0, total: 0 },
 };
-
-const recurringLabels: Record<RecurringStatus, string> = {
-  active: "Activo",
-  paused: "Pausado",
-  overdue: "Vencido",
-  cancelled: "Cancelado",
-};
-
-const collectionLabels: Record<CollectionStatus, string> = {
-  pending: "Pendiente",
-  paid: "Pagado",
-  partial: "Parcial",
-  overdue: "Vencido",
-};
-
-const emptyInvoiceForm: InvoiceForm = {
-  folio: "",
-  client: "",
-  concept: "",
-  amount: "",
-  issuedAt: new Date().toISOString().slice(0, 10),
-  dueDate: "",
-  status: "draft",
-};
-
-const emptyRecurringForm: RecurringForm = {
-  subscriptionName: "",
-  client: "",
-  service: "",
-  plan: "",
-  amount: "",
-  frequency: "Mensual",
-  paymentDay: "1",
-  startedAt: new Date().toISOString().slice(0, 10),
-  nextCharge: "",
-  renewalDate: "",
-  method: "",
-  autoInvoice: true,
-  status: "active",
-  owner: "",
-  notes: "",
-};
-
-const emptyCollectionForm: CollectionForm = {
-  client: "",
-  concept: "",
-  expectedAmount: "",
-  paidAmount: "0",
-  dueDate: "",
-  lastContact: new Date().toISOString().slice(0, 10),
-  nextFollowUp: "",
-  status: "pending",
-  notes: "",
-};
-
-function readStoredList<T>(key: string, fallback: T[]) {
-  const stored = window.localStorage.getItem(key);
-
-  if (!stored) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(stored) as T[];
-  } catch (_error) {
-    return fallback;
-  }
-}
 
 function money(value: number) {
-  return new Intl.NumberFormat("es-MX", { currency: "MXN", maximumFractionDigits: 0, style: "currency" }).format(value);
+  return new Intl.NumberFormat("es-MX", { currency: "MXN", style: "currency" }).format(Number(value || 0));
 }
 
-function formatDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("es-MX");
+function dateLabel(value?: string) {
+  if (!value) return "Sin registro";
+  return new Date(value).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    active: "Activa",
+    cancelled: "Cancelado",
+    draft: "Preparado",
+    issued: "Timbrado",
+    pending: "Pendiente",
+    production: "Producción",
+    synced: "Sincronizado",
+  };
+
+  return labels[status] || status || "Pendiente";
 }
 
 export default function AdminBilling() {
-  const [invoices, setInvoices] = useState<InvoiceItem[]>(() => readStoredList(invoicesStorageKey, invoicesSeed));
-  const [recurringPayments, setRecurringPayments] = useState<RecurringPayment[]>(() => readStoredList(recurringStorageKey, recurringSeed));
-  const [collections, setCollections] = useState<CollectionItem[]>(() => readStoredList(collectionsStorageKey, collectionsSeed));
-  const [activeTab, setActiveTab] = useState<BillingTab>("invoices");
+  const [state, setState] = useState<BillingSatState>(emptyState);
+  const [activeTab, setActiveTab] = useState<SatTab>("cfdi");
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Todos");
   const [openMenu, setOpenMenu] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [invoiceForm, setInvoiceForm] = useState<InvoiceForm>(emptyInvoiceForm);
-  const [recurringForm, setRecurringForm] = useState<RecurringForm>(emptyRecurringForm);
-  const [collectionForm, setCollectionForm] = useState<CollectionForm>(emptyCollectionForm);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [providerForm, setProviderForm] = useState(emptyState.provider);
+  const [emitterForm, setEmitterForm] = useState(emptyState.emitter);
+  const [seriesForm, setSeriesForm] = useState({ company: "", documentType: "Ingreso", nextFolio: "1", serie: "A", status: "active" });
+  const [validationClientId, setValidationClientId] = useState("");
+  const [validationResult, setValidationResult] = useState("");
+  const [cfdiForm, setCfdiForm] = useState({
+    amount: "",
+    cfdiUse: "G03",
+    clientId: "",
+    concept: "",
+    folio: "",
+    paymentForm: "03",
+    paymentMethod: "PUE",
+    productServiceKey: "81112100",
+    quantity: "1",
+    series: "A",
+    unit: "Servicio",
+    unitKey: "E48",
+  });
 
   useCloseOnOutsideClick(Boolean(openMenu), () => setOpenMenu(""));
 
-  useEffect(() => {
-    window.localStorage.setItem(invoicesStorageKey, JSON.stringify(invoices));
-  }, [invoices]);
-
-  useEffect(() => {
-    window.localStorage.setItem(recurringStorageKey, JSON.stringify(recurringPayments));
-  }, [recurringPayments]);
-
-  useEffect(() => {
-    window.localStorage.setItem(collectionsStorageKey, JSON.stringify(collections));
-  }, [collections]);
-
-  const filteredInvoices = useMemo(() => {
+  const filteredCfdis = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return invoices.filter((invoice) => {
-      const matchesQuery = !normalized || `${invoice.folio} ${invoice.client} ${invoice.concept}`.toLowerCase().includes(normalized);
-      const matchesStatus = statusFilter === "Todos" || statusLabels[invoice.status] === statusFilter;
-      return matchesQuery && matchesStatus;
-    });
-  }, [invoices, query, statusFilter]);
+    return state.cfdis.filter((cfdi) => !normalized || `${cfdi.folio} ${cfdi.clientName} ${cfdi.uuid || ""}`.toLowerCase().includes(normalized));
+  }, [query, state.cfdis]);
 
-  const filteredRecurringPayments = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return recurringPayments.filter((payment) => {
-      const matchesQuery =
-        !normalized ||
-        `${payment.subscriptionName ?? ""} ${payment.client} ${payment.service} ${payment.plan} ${payment.method} ${payment.owner} ${payment.notes ?? ""}`.toLowerCase().includes(normalized);
-      const matchesStatus = statusFilter === "Todos" || recurringLabels[payment.status] === statusFilter;
-      return matchesQuery && matchesStatus;
-    });
-  }, [query, recurringPayments, statusFilter]);
+  async function loadSatState() {
+    setLoading(true);
+    setError("");
 
-  const filteredCollections = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return collections.filter((collection) => {
-      const matchesQuery = !normalized || `${collection.client} ${collection.concept} ${collection.notes}`.toLowerCase().includes(normalized);
-      const matchesStatus = statusFilter === "Todos" || collectionLabels[collection.status] === statusFilter;
-      return matchesQuery && matchesStatus;
-    });
-  }, [collections, query, statusFilter]);
-
-  const totalBilled = invoices.filter((invoice) => invoice.status !== "cancelled").reduce((total, invoice) => total + invoice.amount, 0);
-  const totalPaid = invoices.filter((invoice) => invoice.status === "paid").reduce((total, invoice) => total + invoice.amount, 0);
-  const overdue = invoices.filter((invoice) => invoice.status === "overdue").length;
-  const monthlyRecurring = recurringPayments.filter((item) => item.status === "active").reduce((total, item) => total + item.amount, 0);
-  const nextCharges = recurringPayments.filter((item) => item.status === "active" || item.status === "overdue").length;
-  const collectionPending = collections.filter((item) => item.status !== "paid").reduce((total, item) => total + (item.expectedAmount - item.paidAmount), 0);
-
-  function updateStatus(invoice: InvoiceItem, status: InvoiceStatus) {
-    setInvoices((current) => current.map((item) => (item.id === invoice.id ? { ...item, status } : item)));
-    setOpenMenu("");
+    try {
+      const response = await api.get<BillingSatState>("/api/admin/billing/sat");
+      setState(response.data);
+      setProviderForm(response.data.provider);
+      setEmitterForm(response.data.emitter);
+    } catch (requestError) {
+      setError("No se pudo cargar la configuración SAT.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function updateRecurringStatus(payment: RecurringPayment, status: RecurringStatus) {
-    setRecurringPayments((current) => current.map((item) => (item.id === payment.id ? { ...item, status } : item)));
-    setOpenMenu("");
+  useEffect(() => {
+    void loadSatState();
+  }, []);
+
+  function applyState(responseData: BillingSatState & { message?: string }) {
+    setState(responseData);
+    setProviderForm(responseData.provider);
+    setEmitterForm(responseData.emitter);
+    setMessage(responseData.message || "Cambios guardados.");
+    setError("");
   }
 
-  function createInvoiceFromSubscription(payment: RecurringPayment) {
-    const invoice: InvoiceItem = {
-      id: crypto.randomUUID(),
-      folio: `FAC-${String(invoices.length + 1).padStart(5, "0")}`,
-      client: payment.client,
-      concept: `${payment.subscriptionName || payment.service} · ${payment.plan}`,
-      amount: payment.amount,
-      status: "sent",
-      dueDate: payment.nextCharge,
-      issuedAt: new Date().toISOString().slice(0, 10),
-    };
-
-    setInvoices((current) => [invoice, ...current]);
-    setOpenMenu("");
-    setActiveTab("invoices");
-    setMessage("Factura generada desde la suscripción.");
-  }
-
-  function createCollectionFromSubscription(payment: RecurringPayment) {
-    const collection: CollectionItem = {
-      id: crypto.randomUUID(),
-      client: payment.client,
-      concept: `${payment.subscriptionName || payment.service} · ${payment.plan}`,
-      expectedAmount: payment.amount,
-      paidAmount: 0,
-      dueDate: payment.nextCharge,
-      lastContact: new Date().toISOString().slice(0, 10),
-      nextFollowUp: payment.nextCharge,
-      status: "pending",
-      notes: payment.notes || "Cobranza creada desde suscripción.",
-    };
-
-    setCollections((current) => [collection, ...current]);
-    setOpenMenu("");
-    setActiveTab("collections");
-    setMessage("Cobranza creada desde la suscripción.");
-  }
-
-  function updateCollectionStatus(collection: CollectionItem, status: CollectionStatus) {
-    setCollections((current) => current.map((item) => (item.id === collection.id ? { ...item, status, paidAmount: status === "paid" ? item.expectedAmount : item.paidAmount } : item)));
-    setOpenMenu("");
-  }
-
-  function changeTab(tab: BillingTab) {
-    setActiveTab(tab);
-    setStatusFilter("Todos");
-    setOpenMenu("");
-    setShowForm(false);
-    setMessage("");
-  }
-
-  function openCreateForm(tab = activeTab) {
-    setActiveTab(tab);
-    setOpenMenu("");
-    setMessage("");
-    setShowForm(true);
-  }
-
-  function saveInvoice(event: FormEvent<HTMLFormElement>) {
+  async function saveProvider(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!invoiceForm.client || !invoiceForm.concept || !invoiceForm.amount || !invoiceForm.dueDate) {
-      setMessage("Completa cliente, concepto, monto y vencimiento de la factura.");
-      return;
+    try {
+      const response = await api.put<BillingSatState & { message: string }>("/api/admin/billing/sat/provider", providerForm);
+      applyState(response.data);
+    } catch {
+      setError("No se pudo guardar el proveedor.");
     }
-
-    const invoice: InvoiceItem = {
-      id: crypto.randomUUID(),
-      folio: invoiceForm.folio || `FAC-${String(invoices.length + 1).padStart(5, "0")}`,
-      client: invoiceForm.client,
-      concept: invoiceForm.concept,
-      amount: Number(invoiceForm.amount),
-      status: invoiceForm.status,
-      dueDate: invoiceForm.dueDate,
-      issuedAt: invoiceForm.issuedAt,
-    };
-
-    setInvoices((current) => [invoice, ...current]);
-    setInvoiceForm({ ...emptyInvoiceForm, issuedAt: new Date().toISOString().slice(0, 10) });
-    setShowForm(false);
-    setMessage("Factura agregada correctamente.");
   }
 
-  function saveRecurring(event: FormEvent<HTMLFormElement>) {
+  async function saveEmitter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!recurringForm.client || !recurringForm.subscriptionName || !recurringForm.service || !recurringForm.amount || !recurringForm.nextCharge) {
-      setMessage("Completa cliente, suscripción, servicio, monto y próximo cobro.");
-      return;
+    try {
+      const response = await api.put<BillingSatState & { message: string }>("/api/admin/billing/sat/emitter", emitterForm);
+      applyState(response.data);
+    } catch {
+      setError("No se pudieron guardar los datos fiscales del emisor.");
     }
-
-    const payment: RecurringPayment = {
-      id: crypto.randomUUID(),
-      subscriptionName: recurringForm.subscriptionName,
-      client: recurringForm.client,
-      service: recurringForm.service,
-      plan: recurringForm.plan || "Sin plan",
-      amount: Number(recurringForm.amount),
-      frequency: recurringForm.frequency,
-      paymentDay: Number(recurringForm.paymentDay || 1),
-      startedAt: recurringForm.startedAt || new Date().toISOString().slice(0, 10),
-      nextCharge: recurringForm.nextCharge,
-      renewalDate: recurringForm.renewalDate || recurringForm.nextCharge,
-      method: recurringForm.method || "Por definir",
-      autoInvoice: recurringForm.autoInvoice,
-      status: recurringForm.status,
-      owner: recurringForm.owner || "Administración",
-      notes: recurringForm.notes,
-    };
-
-    setRecurringPayments((current) => [payment, ...current]);
-    setRecurringForm({ ...emptyRecurringForm, startedAt: new Date().toISOString().slice(0, 10) });
-    setShowForm(false);
-    setMessage("Suscripción agregada correctamente.");
   }
 
-  function saveCollection(event: FormEvent<HTMLFormElement>) {
+  async function addSeries(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!collectionForm.client || !collectionForm.concept || !collectionForm.expectedAmount || !collectionForm.dueDate) {
-      setMessage("Completa cliente, concepto, monto esperado y vencimiento de cobranza.");
-      return;
+    try {
+      const response = await api.post<BillingSatState & { message: string }>("/api/admin/billing/sat/series", {
+        ...seriesForm,
+        nextFolio: Number(seriesForm.nextFolio || 1),
+      });
+      applyState(response.data);
+      setSeriesForm({ company: "", documentType: "Ingreso", nextFolio: "1", serie: "A", status: "active" });
+    } catch {
+      setError("No se pudo agregar la serie.");
     }
-
-    const collection: CollectionItem = {
-      id: crypto.randomUUID(),
-      client: collectionForm.client,
-      concept: collectionForm.concept,
-      expectedAmount: Number(collectionForm.expectedAmount),
-      paidAmount: Number(collectionForm.paidAmount || 0),
-      dueDate: collectionForm.dueDate,
-      lastContact: collectionForm.lastContact || new Date().toISOString().slice(0, 10),
-      nextFollowUp: collectionForm.nextFollowUp || collectionForm.dueDate,
-      status: collectionForm.status,
-      notes: collectionForm.notes,
-    };
-
-    setCollections((current) => [collection, ...current]);
-    setCollectionForm({ ...emptyCollectionForm, lastContact: new Date().toISOString().slice(0, 10) });
-    setShowForm(false);
-    setMessage("Registro de cobranza agregado correctamente.");
   }
 
-  const activeStatusOptions =
-    activeTab === "recurring"
-      ? Object.values(recurringLabels)
-      : activeTab === "collections"
-        ? Object.values(collectionLabels)
-        : Object.values(statusLabels);
+  async function validateClient(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      const response = await api.post<{ message: string; valid: boolean }>("/api/admin/billing/sat/validate-client", { clientId: validationClientId });
+      setValidationResult(response.data.message);
+      setMessage(response.data.valid ? "Validación fiscal aprobada." : "");
+      setError(response.data.valid ? "" : response.data.message);
+    } catch {
+      setError("No se pudo validar el cliente.");
+    }
+  }
+
+  async function issueCfdi(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    try {
+      const response = await api.post<BillingSatState & { message: string }>("/api/admin/billing/sat/issue", {
+        ...cfdiForm,
+        amount: Number(cfdiForm.amount || 0),
+        quantity: Number(cfdiForm.quantity || 1),
+      });
+      applyState(response.data);
+      setCfdiForm((current) => ({ ...current, amount: "", concept: "", folio: "" }));
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || "No se pudo emitir/preparar el CFDI.");
+    }
+  }
+
+  async function cancelCfdi(cfdi: CfdiRecord) {
+    try {
+      const response = await api.post<BillingSatState & { message: string }>(`/api/admin/billing/sat/${cfdi.id}/cancel`, { motive: "02" });
+      applyState(response.data);
+      setOpenMenu("");
+    } catch {
+      setError("No se pudo cancelar el CFDI.");
+    }
+  }
+
+  async function openCfdiDocument(cfdi: CfdiRecord, type: "pdf" | "qr" | "xml") {
+    try {
+      const response = await api.get(`/api/admin/billing/sat/${cfdi.id}/document/${type}`, { responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = type === "pdf" ? "_blank" : "_self";
+      link.download = `${cfdi.folio}.${type === "qr" ? "png" : type}`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setOpenMenu("");
+    } catch {
+      setError("No se pudo abrir el documento CFDI.");
+    }
+  }
+
+  async function syncCatalogs() {
+    try {
+      const response = await api.post<BillingSatState & { message: string }>("/api/admin/billing/sat/catalogs/sync");
+      applyState(response.data);
+    } catch {
+      setError("No se pudieron sincronizar los catálogos SAT.");
+    }
+  }
+
+  const canIssue = Boolean(state.provider.username && state.provider.passwordConfigured && state.emitter.rfc && state.emitter.taxRegime && state.emitter.postalCode);
 
   return (
-    <section className="billing-module-shell">
+    <section className="billing-module-shell sat-billing-module">
       <div className="clients-page-head">
         <div>
-          <h2>Facturación</h2>
-          <p>Gestiona facturas, cobranza, vencimientos y seguimiento administrativo.</p>
+          <h2>Facturación SAT</h2>
+          <p>Administra CSFacturación, series, datos fiscales, validación de clientes y emisión CFDI.</p>
         </div>
         <div className="clients-head-actions">
-          <button className="clients-primary-action" onClick={() => openCreateForm("invoices")} type="button"><Plus size={20} /> Nueva factura</button>
+          <button className="clients-primary-action" onClick={() => setActiveTab("cfdi")} type="button">
+            <FileCheck2 size={20} /> Emitir CFDI
+          </button>
         </div>
       </div>
 
-      {message && <p className={message.includes("Completa") ? "admin-form-error" : "admin-form-success"}>{message}</p>}
-
-      <section className="billing-action-grid">
-        <button onClick={() => openCreateForm("invoices")} type="button">
-          <span><FileText size={21} /></span>
-          <strong>Agregar factura</strong>
-          <small>Folio, cliente, concepto, monto y vencimiento.</small>
-        </button>
-        <button onClick={() => openCreateForm("recurring")} type="button">
-          <span><WalletCards size={21} /></span>
-          <strong>Suscripción recurrente</strong>
-          <small>Planes, renovación, auto-facturación y próximo cobro.</small>
-        </button>
-        <button onClick={() => openCreateForm("collections")} type="button">
-          <span><CalendarClock size={21} /></span>
-          <strong>Cobranza</strong>
-          <small>Saldo pendiente, contacto y seguimiento.</small>
-        </button>
-      </section>
+      {message && <p className="admin-form-success">{message}</p>}
+      {error && <p className="admin-form-error">{error}</p>}
+      {loading && <p className="admin-form-success">Cargando configuración SAT...</p>}
 
       <div className="clients-stats-grid">
-        <article className="clients-stat-card"><span className="clients-stat-icon is-blue"><FileText size={27} /></span><div><p>Total facturado</p><h3>{money(totalBilled)}</h3><small>Facturas no canceladas</small></div></article>
-        <article className="clients-stat-card"><span className="clients-stat-icon is-green"><CreditCard size={27} /></span><div><p>Cobrado</p><h3>{money(totalPaid)}</h3><small>Pagos confirmados</small></div></article>
-        <article className="clients-stat-card"><span className="clients-stat-icon is-purple"><WalletCards size={27} /></span><div><p>Recurrente mensual</p><h3>{money(monthlyRecurring)}</h3><small>{nextCharges} cobros activos</small></div></article>
-        <article className="clients-stat-card"><span className="clients-stat-icon is-orange"><CalendarClock size={27} /></span><div><p>Por cobrar</p><h3>{money(collectionPending)}</h3><small>{overdue} facturas vencidas</small></div></article>
+        <article className="clients-stat-card"><span className="clients-stat-icon is-blue"><FileText size={27} /></span><div><p>CFDI registrados</p><h3>{state.metrics.total}</h3><small>XML/PDF/QR por proveedor</small></div></article>
+        <article className="clients-stat-card"><span className="clients-stat-icon is-green"><BadgeCheck size={27} /></span><div><p>Timbrados</p><h3>{state.metrics.issued}</h3><small>Emisiones confirmadas</small></div></article>
+        <article className="clients-stat-card"><span className="clients-stat-icon is-purple"><KeyRound size={27} /></span><div><p>Proveedor</p><h3>{state.provider.passwordConfigured ? "Listo" : "Sin secret"}</h3><small>{state.provider.environment === "production" ? "Producción" : "Demo"} · {state.provider.name}</small></div></article>
+        <article className="clients-stat-card"><span className="clients-stat-icon is-orange"><RotateCw size={27} /></span><div><p>Catálogos SAT</p><h3>{statusLabel(state.catalogs.status)}</h3><small>{dateLabel(state.catalogs.lastSyncAt)}</small></div></article>
       </div>
 
-      <article className="billing-table-card">
+      <article className="billing-table-card sat-workspace-card">
         <nav className="billing-tabs">
-          <button className={activeTab === "invoices" ? "is-active" : ""} onClick={() => changeTab("invoices")} type="button">Facturas</button>
-          <button className={activeTab === "recurring" ? "is-active" : ""} onClick={() => changeTab("recurring")} type="button">Suscripciones</button>
-          <button className={activeTab === "collections" ? "is-active" : ""} onClick={() => changeTab("collections")} type="button">Cobranza</button>
+          <button className={activeTab === "cfdi" ? "is-active" : ""} onClick={() => setActiveTab("cfdi")} type="button">Emisión CFDI</button>
+          <button className={activeTab === "provider" ? "is-active" : ""} onClick={() => setActiveTab("provider")} type="button">Proveedor</button>
+          <button className={activeTab === "series" ? "is-active" : ""} onClick={() => setActiveTab("series")} type="button">Series</button>
+          <button className={activeTab === "emitter" ? "is-active" : ""} onClick={() => setActiveTab("emitter")} type="button">Emisor</button>
+          <button className={activeTab === "validation" ? "is-active" : ""} onClick={() => setActiveTab("validation")} type="button">Validación fiscal</button>
+          <button className={activeTab === "catalogs" ? "is-active" : ""} onClick={() => setActiveTab("catalogs")} type="button">Catálogos SAT</button>
         </nav>
-        {showForm && activeTab === "invoices" && (
-          <form className="billing-entry-form" onSubmit={saveInvoice}>
-            <label><span>Folio</span><input onChange={(event) => setInvoiceForm((current) => ({ ...current, folio: event.target.value }))} placeholder="Ej. FAC-00001" value={invoiceForm.folio} /></label>
-            <label><span>Cliente <b>*</b></span><input onChange={(event) => setInvoiceForm((current) => ({ ...current, client: event.target.value }))} placeholder="Ej. Clínica Valle del Sol" value={invoiceForm.client} /></label>
-            <label><span>Concepto <b>*</b></span><input onChange={(event) => setInvoiceForm((current) => ({ ...current, concept: event.target.value }))} placeholder="Ej. Desarrollo web" value={invoiceForm.concept} /></label>
-            <label><span>Monto <b>*</b></span><input min="0" onChange={(event) => setInvoiceForm((current) => ({ ...current, amount: event.target.value }))} placeholder="14990" type="number" value={invoiceForm.amount} /></label>
-            <label><span>Emisión</span><input onChange={(event) => setInvoiceForm((current) => ({ ...current, issuedAt: event.target.value }))} type="date" value={invoiceForm.issuedAt} /></label>
-            <label><span>Vencimiento <b>*</b></span><input onChange={(event) => setInvoiceForm((current) => ({ ...current, dueDate: event.target.value }))} type="date" value={invoiceForm.dueDate} /></label>
-            <label><span>Estado</span><select onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value as InvoiceStatus }))} value={invoiceForm.status}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <div className="billing-entry-actions"><button onClick={() => setShowForm(false)} type="button">Cancelar</button><button type="submit"><Save size={16} /> Guardar factura</button></div>
+
+        {activeTab === "cfdi" && (
+          <>
+            <section className="sat-api-panel">
+              <div>
+                <h3>Emitir CFDI desde pagos o facturas</h3>
+                <p>El backend construye el JSON de CSFacturación y guarda la respuesta XML/PDF/QR devuelta por el proveedor.</p>
+              </div>
+              <span className={`billing-status is-${canIssue ? "valid" : "pending"}`}>{canIssue ? "Listo para emitir" : "Configuración pendiente"}</span>
+            </section>
+            <form className="billing-entry-form sat-cfdi-form" onSubmit={issueCfdi}>
+              <label><span>Cliente <b>*</b></span><select onChange={(event) => setCfdiForm((current) => ({ ...current, clientId: event.target.value }))} value={cfdiForm.clientId}><option value="">Seleccionar cliente</option>{state.clients.map((client) => <option key={client.id} value={client.id}>{client.legalName || client.businessName}</option>)}</select></label>
+              <label><span>Serie</span><select onChange={(event) => setCfdiForm((current) => ({ ...current, series: event.target.value }))} value={cfdiForm.series}>{state.series.length ? state.series.map((serie) => <option key={serie.id} value={serie.serie}>{serie.serie} · {serie.company}</option>) : <option>A</option>}</select></label>
+              <label><span>Folio</span><input onChange={(event) => setCfdiForm((current) => ({ ...current, folio: event.target.value }))} placeholder="Opcional" value={cfdiForm.folio} /></label>
+              <label><span>Monto sin IVA <b>*</b></span><input min="0" onChange={(event) => setCfdiForm((current) => ({ ...current, amount: event.target.value }))} placeholder="14990" type="number" value={cfdiForm.amount} /></label>
+              <label className="billing-entry-wide"><span>Concepto <b>*</b></span><input onChange={(event) => setCfdiForm((current) => ({ ...current, concept: event.target.value }))} placeholder="Ej. Desarrollo de sitio web corporativo" value={cfdiForm.concept} /></label>
+              <label><span>Clave SAT</span><input onChange={(event) => setCfdiForm((current) => ({ ...current, productServiceKey: event.target.value }))} value={cfdiForm.productServiceKey} /></label>
+              <label><span>Uso CFDI</span><input onChange={(event) => setCfdiForm((current) => ({ ...current, cfdiUse: event.target.value }))} value={cfdiForm.cfdiUse} /></label>
+              <label><span>Forma pago</span><input onChange={(event) => setCfdiForm((current) => ({ ...current, paymentForm: event.target.value }))} value={cfdiForm.paymentForm} /></label>
+              <label><span>Método pago</span><select onChange={(event) => setCfdiForm((current) => ({ ...current, paymentMethod: event.target.value }))} value={cfdiForm.paymentMethod}><option value="PUE">PUE</option><option value="PPD">PPD</option></select></label>
+              <div className="billing-entry-actions"><button onClick={loadSatState} type="button">Actualizar</button><button type="submit"><FileCheck2 size={16} /> Emitir / preparar</button></div>
+            </form>
+            <div className="billing-table-toolbar">
+              <label className="clients-table-search"><Search size={19} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Buscar folio, cliente o UUID..." value={query} /></label>
+              <button className="clients-filter-button" type="button"><SlidersHorizontal size={18} /> Filtros</button>
+              <button className="clients-download-button" type="button"><Download size={18} /></button>
+            </div>
+            <div className="clients-table-wrap sat-table-wrap">
+              <table className="billing-data-table sat-cfdi-table">
+                <thead><tr><th>Folio</th><th>Cliente</th><th>Proveedor</th><th>Ambiente</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>UUID</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+                <tbody>
+                  {filteredCfdis.map((cfdi) => (
+                    <tr key={cfdi.id}>
+                      <td><strong>{cfdi.folio}</strong></td>
+                      <td>{cfdi.clientName}</td>
+                      <td>{cfdi.provider}</td>
+                      <td>{statusLabel(cfdi.environment)}</td>
+                      <td>{money(cfdi.subtotal)}</td>
+                      <td>{money(cfdi.tax)}</td>
+                      <td>{money(cfdi.total)}</td>
+                      <td>{cfdi.uuid || "Pendiente"}</td>
+                      <td><span className={`billing-status is-${cfdi.status}`}>{statusLabel(cfdi.status)}</span></td>
+                      <td>{dateLabel(cfdi.createdAt)}</td>
+                      <td>
+                        <button className="clients-row-action" onClick={() => setOpenMenu(openMenu === cfdi.id ? "" : cfdi.id)} type="button"><MoreVertical size={20} /></button>
+                        <div className={`clients-action-menu ${openMenu === cfdi.id ? "is-open" : ""}`}>
+                          <button disabled={!cfdi.uuid} type="button">Consultar estado</button>
+                          <button disabled={!cfdi.xmlBase64} onClick={() => openCfdiDocument(cfdi, "xml")} type="button">Descargar XML</button>
+                          <button disabled={!cfdi.pdfBase64} onClick={() => openCfdiDocument(cfdi, "pdf")} type="button">Descargar PDF</button>
+                          <button disabled={!cfdi.qrBase64} onClick={() => openCfdiDocument(cfdi, "qr")} type="button">Ver QR</button>
+                          <button disabled={cfdi.status === "cancelled"} onClick={() => cancelCfdi(cfdi)} type="button"><XCircle size={15} /> Cancelar CFDI</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!filteredCfdis.length && <tr><td colSpan={11}>No hay CFDI con ese criterio.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {activeTab === "provider" && (
+          <form className="billing-entry-form sat-provider-form" onSubmit={saveProvider}>
+            <label><span>Proveedor</span><input disabled value={providerForm.name} /></label>
+            <label><span>Ambiente</span><select onChange={(event) => setProviderForm((current) => ({ ...current, environment: event.target.value as ProviderConfig["environment"] }))} value={providerForm.environment}><option value="demo">Demo</option><option value="production">Producción</option></select></label>
+            <label><span>Usuario API</span><input onChange={(event) => setProviderForm((current) => ({ ...current, username: event.target.value }))} placeholder="Usuario CSFacturación" value={providerForm.username} /></label>
+            <label><span>Secret Manager</span><input onChange={(event) => setProviderForm((current) => ({ ...current, secretName: event.target.value }))} placeholder="csfacturacion-password" value={providerForm.secretName} /></label>
+            <label className="billing-entry-wide"><span>Endpoint demo</span><input onChange={(event) => setProviderForm((current) => ({ ...current, demoEndpoint: event.target.value }))} value={providerForm.demoEndpoint} /></label>
+            <label className="billing-entry-wide"><span>Endpoint producción</span><input onChange={(event) => setProviderForm((current) => ({ ...current, productionEndpoint: event.target.value }))} value={providerForm.productionEndpoint} /></label>
+            <div className="billing-entry-actions"><button onClick={loadSatState} type="button">Cancelar</button><button type="submit"><Save size={16} /> Guardar proveedor</button></div>
           </form>
         )}
 
-        {showForm && activeTab === "recurring" && (
-          <form className="billing-entry-form is-recurring" onSubmit={saveRecurring}>
-            <label><span>Suscripción <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, subscriptionName: event.target.value }))} placeholder="Ej. Workspace mensual" value={recurringForm.subscriptionName} /></label>
-            <label><span>Cliente <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, client: event.target.value }))} placeholder="Ej. Clínica Valle del Sol" value={recurringForm.client} /></label>
-            <label><span>Servicio <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, service: event.target.value }))} placeholder="Ej. Google Workspace" value={recurringForm.service} /></label>
-            <label><span>Plan</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, plan: event.target.value }))} placeholder="Ej. Business Standard" value={recurringForm.plan} /></label>
-            <label><span>Monto <b>*</b></span><input min="0" onChange={(event) => setRecurringForm((current) => ({ ...current, amount: event.target.value }))} type="number" value={recurringForm.amount} /></label>
-            <label><span>Frecuencia</span><select onChange={(event) => setRecurringForm((current) => ({ ...current, frequency: event.target.value }))} value={recurringForm.frequency}><option>Mensual</option><option>Anual</option><option>Trimestral</option><option>Semestral</option></select></label>
-            <label><span>Día de cobro</span><input max="31" min="1" onChange={(event) => setRecurringForm((current) => ({ ...current, paymentDay: event.target.value }))} type="number" value={recurringForm.paymentDay} /></label>
-            <label><span>Inicio</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, startedAt: event.target.value }))} type="date" value={recurringForm.startedAt} /></label>
-            <label><span>Próximo cobro <b>*</b></span><input onChange={(event) => setRecurringForm((current) => ({ ...current, nextCharge: event.target.value }))} type="date" value={recurringForm.nextCharge} /></label>
-            <label><span>Renovación</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, renewalDate: event.target.value }))} type="date" value={recurringForm.renewalDate} /></label>
-            <label><span>Método</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, method: event.target.value }))} placeholder="Ej. Transferencia, tarjeta" value={recurringForm.method} /></label>
-            <label><span>Responsable</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Ej. Administración" value={recurringForm.owner} /></label>
-            <label><span>Estado</span><select onChange={(event) => setRecurringForm((current) => ({ ...current, status: event.target.value as RecurringStatus }))} value={recurringForm.status}>{Object.entries(recurringLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="billing-entry-check"><input checked={recurringForm.autoInvoice} onChange={(event) => setRecurringForm((current) => ({ ...current, autoInvoice: event.target.checked }))} type="checkbox" /> <span>Generar factura automáticamente</span></label>
-            <label className="billing-entry-wide"><span>Notas</span><input onChange={(event) => setRecurringForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Condiciones, recordatorios o datos de renovación..." value={recurringForm.notes} /></label>
-            <div className="billing-entry-actions"><button onClick={() => setShowForm(false)} type="button">Cancelar</button><button type="submit"><Save size={16} /> Guardar suscripción</button></div>
+        {activeTab === "series" && (
+          <>
+            <form className="billing-entry-form" onSubmit={addSeries}>
+              <label><span>Empresa <b>*</b></span><input onChange={(event) => setSeriesForm((current) => ({ ...current, company: event.target.value }))} placeholder="GiovSoft Technologies" value={seriesForm.company} /></label>
+              <label><span>Serie <b>*</b></span><input onChange={(event) => setSeriesForm((current) => ({ ...current, serie: event.target.value }))} value={seriesForm.serie} /></label>
+              <label><span>Siguiente folio</span><input min="1" onChange={(event) => setSeriesForm((current) => ({ ...current, nextFolio: event.target.value }))} type="number" value={seriesForm.nextFolio} /></label>
+              <label><span>Tipo</span><select onChange={(event) => setSeriesForm((current) => ({ ...current, documentType: event.target.value }))} value={seriesForm.documentType}><option>Ingreso</option><option>Egreso</option><option>Pago</option></select></label>
+              <div className="billing-entry-actions"><button type="button">Limpiar</button><button type="submit"><Plus size={16} /> Agregar serie</button></div>
+            </form>
+            <div className="clients-table-wrap sat-table-wrap">
+              <table className="billing-data-table sat-series-table">
+                <thead><tr><th>Empresa</th><th>Serie</th><th>Siguiente folio</th><th>Tipo</th><th>Estado</th></tr></thead>
+                <tbody>{state.series.map((serie) => <tr key={serie.id}><td>{serie.company}</td><td><strong>{serie.serie}</strong></td><td>{serie.nextFolio}</td><td>{serie.documentType}</td><td><span className={`billing-status is-${serie.status}`}>{statusLabel(serie.status)}</span></td></tr>)}{!state.series.length && <tr><td colSpan={5}>Aún no hay series registradas.</td></tr>}</tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {activeTab === "emitter" && (
+          <form className="billing-entry-form" onSubmit={saveEmitter}>
+            <label className="billing-entry-wide"><span>Razón social <b>*</b></span><input onChange={(event) => setEmitterForm((current) => ({ ...current, legalName: event.target.value }))} value={emitterForm.legalName} /></label>
+            <label><span>RFC <b>*</b></span><input onChange={(event) => setEmitterForm((current) => ({ ...current, rfc: event.target.value.toUpperCase() }))} placeholder="RFC emisor" value={emitterForm.rfc} /></label>
+            <label><span>Régimen fiscal <b>*</b></span><input onChange={(event) => setEmitterForm((current) => ({ ...current, taxRegime: event.target.value }))} placeholder="Ej. 626" value={emitterForm.taxRegime} /></label>
+            <label><span>Código postal <b>*</b></span><input onChange={(event) => setEmitterForm((current) => ({ ...current, postalCode: event.target.value }))} placeholder="Ej. 44100" value={emitterForm.postalCode} /></label>
+            <label><span>CSD</span><select onChange={(event) => setEmitterForm((current) => ({ ...current, certificateStatus: event.target.value }))} value={emitterForm.certificateStatus}><option value="pending">Pendiente</option><option value="active">Activo</option><option value="expired">Vencido</option></select></label>
+            <div className="billing-entry-actions"><button onClick={loadSatState} type="button">Cancelar</button><button type="submit"><Save size={16} /> Guardar emisor</button></div>
           </form>
         )}
 
-        {showForm && activeTab === "collections" && (
-          <form className="billing-entry-form is-collection" onSubmit={saveCollection}>
-            <label><span>Cliente <b>*</b></span><input onChange={(event) => setCollectionForm((current) => ({ ...current, client: event.target.value }))} placeholder="Ej. Clínica Valle del Sol" value={collectionForm.client} /></label>
-            <label><span>Concepto <b>*</b></span><input onChange={(event) => setCollectionForm((current) => ({ ...current, concept: event.target.value }))} placeholder="Ej. Renovación anual" value={collectionForm.concept} /></label>
-            <label><span>Monto esperado <b>*</b></span><input min="0" onChange={(event) => setCollectionForm((current) => ({ ...current, expectedAmount: event.target.value }))} type="number" value={collectionForm.expectedAmount} /></label>
-            <label><span>Pagado</span><input min="0" onChange={(event) => setCollectionForm((current) => ({ ...current, paidAmount: event.target.value }))} type="number" value={collectionForm.paidAmount} /></label>
-            <label><span>Vencimiento <b>*</b></span><input onChange={(event) => setCollectionForm((current) => ({ ...current, dueDate: event.target.value }))} type="date" value={collectionForm.dueDate} /></label>
-            <label><span>Último contacto</span><input onChange={(event) => setCollectionForm((current) => ({ ...current, lastContact: event.target.value }))} type="date" value={collectionForm.lastContact} /></label>
-            <label><span>Próximo seguimiento</span><input onChange={(event) => setCollectionForm((current) => ({ ...current, nextFollowUp: event.target.value }))} type="date" value={collectionForm.nextFollowUp} /></label>
-            <label><span>Estado</span><select onChange={(event) => setCollectionForm((current) => ({ ...current, status: event.target.value as CollectionStatus }))} value={collectionForm.status}>{Object.entries(collectionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="billing-entry-wide"><span>Notas</span><input onChange={(event) => setCollectionForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Acuerdos, recordatorios o datos de seguimiento..." value={collectionForm.notes} /></label>
-            <div className="billing-entry-actions"><button onClick={() => setShowForm(false)} type="button">Cancelar</button><button type="submit"><Save size={16} /> Guardar cobranza</button></div>
+        {activeTab === "validation" && (
+          <form className="billing-entry-form sat-validation-form" onSubmit={validateClient}>
+            <label className="billing-entry-wide"><span>Cliente</span><select onChange={(event) => setValidationClientId(event.target.value)} value={validationClientId}><option value="">Seleccionar cliente</option>{state.clients.map((client) => <option key={client.id} value={client.id}>{client.legalName || client.businessName}</option>)}</select></label>
+            <div className="sat-validation-summary">
+              <ShieldCheck size={28} />
+              <strong>Validación fiscal previa</strong>
+              <p>Revisa RFC, razón social, régimen, uso CFDI y código postal antes de enviar a CSFacturación.</p>
+              {validationResult && <span>{validationResult}</span>}
+            </div>
+            <div className="billing-entry-actions"><button onClick={() => setValidationResult("")} type="button">Limpiar</button><button type="submit"><CheckCircle2 size={16} /> Validar cliente</button></div>
           </form>
         )}
-        <div className="billing-table-toolbar">
-          <label className="clients-table-search"><Search size={19} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Buscar folio, cliente o concepto..." value={query} /></label>
-          <label className="clients-filter-field">
-            Estado
-            <select onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
-              <option>Todos</option>
-              {activeStatusOptions.map((status) => <option key={status}>{status}</option>)}
-            </select>
-          </label>
-          <button className="clients-filter-button" type="button"><Filter size={18} /> Filtros</button>
-          <button className="clients-download-button" type="button"><Download size={18} /></button>
-        </div>
-        <div className="clients-table-wrap">
-          {activeTab === "invoices" && (
-            <table className="billing-data-table">
-              <thead><tr><th>Folio</th><th>Cliente</th><th>Concepto</th><th>Monto</th><th>Emisión</th><th>Vencimiento</th><th>Estado</th><th>Acciones</th></tr></thead>
-              <tbody>
-                {filteredInvoices.map((invoice) => (
-                  <tr key={invoice.id}>
-                    <td><strong>{invoice.folio}</strong></td>
-                    <td>{invoice.client}</td>
-                    <td>{invoice.concept}</td>
-                    <td>{money(invoice.amount)}</td>
-                    <td>{formatDate(invoice.issuedAt)}</td>
-                    <td>{formatDate(invoice.dueDate)}</td>
-                    <td><span className={`billing-status is-${invoice.status}`}>{statusLabels[invoice.status]}</span></td>
-                    <td>
-                      <button className="clients-row-action" onClick={() => setOpenMenu(openMenu === invoice.id ? "" : invoice.id)} type="button"><MoreVertical size={20} /></button>
-                      <div className={`clients-action-menu ${openMenu === invoice.id ? "is-open" : ""}`}>
-                        <button onClick={() => updateStatus(invoice, "sent")} type="button"><Send size={15} /> Emitir</button>
-                        <button onClick={() => updateStatus(invoice, "paid")} type="button">Marcar pagada</button>
-                        <button onClick={() => updateStatus(invoice, "cancelled")} type="button">Cancelar</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
 
-          {activeTab === "recurring" && (
-            <table className="billing-data-table">
-              <thead><tr><th>Suscripción</th><th>Cliente</th><th>Servicio</th><th>Plan</th><th>Monto</th><th>Periodicidad</th><th>Inicio</th><th>Próximo cobro</th><th>Renovación</th><th>Auto factura</th><th>Método</th><th>Responsable</th><th>Estado</th><th>Acciones</th></tr></thead>
-              <tbody>
-                {filteredRecurringPayments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td><strong>{payment.subscriptionName || payment.service}</strong></td>
-                    <td><strong>{payment.client}</strong></td>
-                    <td>{payment.service}</td>
-                    <td>{payment.plan}</td>
-                    <td>{money(payment.amount)}</td>
-                    <td>{payment.frequency} · día {payment.paymentDay}</td>
-                    <td>{formatDate(payment.startedAt || payment.nextCharge)}</td>
-                    <td>{formatDate(payment.nextCharge)}</td>
-                    <td>{formatDate(payment.renewalDate || payment.nextCharge)}</td>
-                    <td>{payment.autoInvoice === false ? "Manual" : "Automática"}</td>
-                    <td>{payment.method}</td>
-                    <td>{payment.owner}</td>
-                    <td><span className={`billing-status is-${payment.status}`}>{recurringLabels[payment.status]}</span></td>
-                    <td>
-                      <button className="clients-row-action" onClick={() => setOpenMenu(openMenu === payment.id ? "" : payment.id)} type="button"><MoreVertical size={20} /></button>
-                      <div className={`clients-action-menu ${openMenu === payment.id ? "is-open" : ""}`}>
-                        <button onClick={() => createInvoiceFromSubscription(payment)} type="button">Generar factura</button>
-                        <button onClick={() => createCollectionFromSubscription(payment)} type="button">Crear cobranza</button>
-                        <button onClick={() => updateRecurringStatus(payment, "active")} type="button">Activar</button>
-                        <button onClick={() => updateRecurringStatus(payment, "paused")} type="button">Pausar</button>
-                        <button onClick={() => updateRecurringStatus(payment, "cancelled")} type="button">Cancelar</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {activeTab === "collections" && (
-            <table className="billing-data-table">
-              <thead><tr><th>Cliente</th><th>Concepto</th><th>Esperado</th><th>Pagado</th><th>Saldo</th><th>Vencimiento</th><th>Último contacto</th><th>Próximo seguimiento</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead>
-              <tbody>
-                {filteredCollections.map((collection) => (
-                  <tr key={collection.id}>
-                    <td><strong>{collection.client}</strong></td>
-                    <td>{collection.concept}</td>
-                    <td>{money(collection.expectedAmount)}</td>
-                    <td>{money(collection.paidAmount)}</td>
-                    <td>{money(collection.expectedAmount - collection.paidAmount)}</td>
-                    <td>{formatDate(collection.dueDate)}</td>
-                    <td>{formatDate(collection.lastContact)}</td>
-                    <td>{formatDate(collection.nextFollowUp)}</td>
-                    <td><span className={`billing-status is-${collection.status}`}>{collectionLabels[collection.status]}</span></td>
-                    <td>{collection.notes}</td>
-                    <td>
-                      <button className="clients-row-action" onClick={() => setOpenMenu(openMenu === collection.id ? "" : collection.id)} type="button"><MoreVertical size={20} /></button>
-                      <div className={`clients-action-menu ${openMenu === collection.id ? "is-open" : ""}`}>
-                        <button onClick={() => updateCollectionStatus(collection, "paid")} type="button">Registrar pago</button>
-                        <button onClick={() => updateCollectionStatus(collection, "partial")} type="button">Pago parcial</button>
-                        <button onClick={() => updateCollectionStatus(collection, "overdue")} type="button">Marcar vencido</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {activeTab === "catalogs" && (
+          <section className="sat-catalogs-panel">
+            <div>
+              <h3>Catálogos SAT sincronizados</h3>
+              <p>Base para validar régimen fiscal, uso CFDI, forma de pago, método de pago, monedas y tipos de comprobante.</p>
+              <small>Última sincronización: {dateLabel(state.catalogs.lastSyncAt)}</small>
+            </div>
+            <button className="clients-primary-action" onClick={syncCatalogs} type="button"><RotateCw size={18} /> Sincronizar catálogos</button>
+            <div className="sat-catalog-list">
+              {state.catalogs.items.map((item) => <span key={item}><Building2 size={16} /> {item}</span>)}
+            </div>
+          </section>
+        )}
       </article>
     </section>
   );

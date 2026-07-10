@@ -6153,6 +6153,122 @@ body:has(.app-shell),
   color: #ff4f58;
 }
 
+.sat-billing-module {
+  min-width: 0;
+}
+
+.sat-workspace-card {
+  overflow: visible;
+}
+
+.sat-api-panel,
+.sat-catalogs-panel {
+  align-items: center;
+  border-bottom: 1px solid #edf1f7;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1.35rem 1.5rem;
+}
+
+.sat-api-panel h3,
+.sat-catalogs-panel h3 {
+  color: #101c31;
+  font-size: 1.05rem;
+  font-weight: 950;
+  margin: 0 0 0.3rem;
+}
+
+.sat-api-panel p,
+.sat-catalogs-panel p,
+.sat-catalogs-panel small {
+  color: #64738c;
+  font-weight: 800;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.sat-cfdi-form,
+.sat-provider-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sat-validation-form {
+  align-items: stretch;
+  grid-template-columns: minmax(16rem, 0.8fr) minmax(18rem, 1.2fr) auto;
+}
+
+.sat-validation-summary {
+  align-items: center;
+  background: #f7faff;
+  border: 1px solid #e2eafe;
+  border-radius: 0.8rem;
+  color: #26344b;
+  display: grid;
+  gap: 0.25rem;
+  grid-template-columns: auto 1fr;
+  padding: 0.9rem 1rem;
+}
+
+.sat-validation-summary svg {
+  color: #4169ff;
+  grid-row: span 3;
+}
+
+.sat-validation-summary strong {
+  color: #101c31;
+  font-weight: 950;
+}
+
+.sat-validation-summary p,
+.sat-validation-summary span {
+  color: #64738c;
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.sat-table-wrap {
+  min-height: 18rem;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.sat-cfdi-table {
+  min-width: 112rem;
+}
+
+.sat-series-table {
+  min-width: 58rem;
+}
+
+.sat-catalogs-panel {
+  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) auto;
+}
+
+.sat-catalog-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  grid-column: 1 / -1;
+}
+
+.sat-catalog-list span {
+  align-items: center;
+  background: #eef2ff;
+  border: 1px solid #dce5ff;
+  border-radius: 999px;
+  color: #4169ff;
+  display: inline-flex;
+  font-weight: 900;
+  gap: 0.4rem;
+  min-height: 2.2rem;
+  padding: 0 0.8rem;
+}
+
 .quotes-module-shell {
   min-width: 0;
 }
@@ -12767,6 +12883,9 @@ body:has(.app-shell),
   .billing-entry-form,
   .billing-entry-form.is-recurring,
   .billing-entry-form.is-collection,
+  .sat-cfdi-form,
+  .sat-provider-form,
+  .sat-validation-form,
   .project-deliverable-form {
     padding: 1rem;
   }
@@ -12791,6 +12910,26 @@ body:has(.app-shell),
 
   .quotes-card .quotes-data-table {
     min-width: 82rem;
+  }
+
+  .sat-api-panel,
+  .sat-catalogs-panel {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+
+  .sat-cfdi-table {
+    min-width: 96rem;
+  }
+
+  .sat-series-table {
+    min-width: 54rem;
+  }
+
+  .sat-validation-summary {
+    grid-template-columns: 1fr;
   }
 
   .quotes-card .clients-filter-button,

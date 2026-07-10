@@ -24,6 +24,7 @@ const requestsFile = path.join(dataDir, "contact-requests.json");
 const clientsFile = path.join(dataDir, "clients.json");
 const adminUsersFile = path.join(dataDir, "admin-users.json");
 const quotesFile = path.join(dataDir, "quotes.json");
+const billingSatFile = path.join(dataDir, "billing-sat.json");
 const applicationsFile = path.join(dataDir, "connected-applications.json");
 const assetsDir = path.join(__dirname, "assets");
 const logoPath = path.join(assetsDir, "logo-white.svg");
@@ -106,6 +107,35 @@ const requestStatuses = {
 
 const quoteStatuses = new Set(["draft", "sent", "accepted", "rejected", "expired", "cancelled"]);
 const applicationStatuses = new Set(["active", "pending", "paused", "error"]);
+
+const defaultBillingSatState = {
+  provider: {
+    name: "CSFacturacion",
+    environment: "demo",
+    username: "",
+    secretName: "csfacturacion-password",
+    demoEndpoint: "https://csplug.csfacturacion.com/demo/cfdi",
+    productionEndpoint: "https://csplug.csfacturacion.com/cfdi",
+    demoCancelEndpoint: "https://csplug.csfacturacion.com/demo/cfdi/cancelar",
+    productionCancelEndpoint: "https://csplug.csfacturacion.com/cfdi/cancelar",
+    configured: false,
+    lastVerifiedAt: "",
+  },
+  series: [],
+  emitter: {
+    legalName: giovsoftLegalName,
+    rfc: "",
+    taxRegime: "",
+    postalCode: "",
+    certificateStatus: "pending",
+  },
+  cfdis: [],
+  catalogs: {
+    status: "pending",
+    lastSyncAt: "",
+    items: ["RegimenFiscal", "UsoCFDI", "FormaPago", "MetodoPago", "Moneda", "TipoComprobante"],
+  },
+};
 
 app.use(
   cors({
@@ -1387,6 +1417,12 @@ async function ensureDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS billing_sat_settings (
+      id TEXT PRIMARY KEY,
+      state JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS tickets (
       id UUID PRIMARY KEY,
       client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
@@ -1747,6 +1783,16 @@ async function ensureQuotesFile() {
   }
 }
 
+async function ensureBillingSatFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(billingSatFile);
+  } catch {
+    await fs.writeFile(billingSatFile, JSON.stringify(defaultBillingSatState, null, 2), "utf8");
+  }
+}
+
 async function ensureApplicationsFile() {
   await fs.mkdir(dataDir, { recursive: true });
 
@@ -2104,6 +2150,173 @@ async function writeQuotes(quotes) {
 
   await ensureQuotesFile();
   await fs.writeFile(quotesFile, JSON.stringify(quotes, null, 2), "utf8");
+}
+
+function mergeBillingSatState(state = {}) {
+  return {
+    ...defaultBillingSatState,
+    ...sanitizePlainObject(state),
+    provider: { ...defaultBillingSatState.provider, ...sanitizePlainObject(state.provider) },
+    emitter: { ...defaultBillingSatState.emitter, ...sanitizePlainObject(state.emitter) },
+    catalogs: { ...defaultBillingSatState.catalogs, ...sanitizePlainObject(state.catalogs), items: safeArray(state.catalogs?.items).length ? safeArray(state.catalogs.items) : defaultBillingSatState.catalogs.items },
+    series: safeArray(state.series),
+    cfdis: safeArray(state.cfdis),
+  };
+}
+
+function publicBillingSatState(state) {
+  const merged = mergeBillingSatState(state);
+  return {
+    ...merged,
+    provider: {
+      ...merged.provider,
+      passwordConfigured: Boolean(process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS),
+    },
+  };
+}
+
+async function readBillingSatState() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const { rows } = await currentPool.query("SELECT state FROM billing_sat_settings WHERE id = 'main' LIMIT 1");
+
+    if (!rows.length) {
+      await writeBillingSatState(defaultBillingSatState);
+      return defaultBillingSatState;
+    }
+
+    return mergeBillingSatState(rows[0].state);
+  }
+
+  await ensureBillingSatFile();
+  const raw = await fs.readFile(billingSatFile, "utf8");
+  return mergeBillingSatState(JSON.parse(raw));
+}
+
+async function writeBillingSatState(state) {
+  const normalized = mergeBillingSatState(state);
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    await currentPool.query(
+      `
+        INSERT INTO billing_sat_settings (id, state, updated_at)
+        VALUES ('main', $1::jsonb, NOW())
+        ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()
+      `,
+      [JSON.stringify(normalized)]
+    );
+    return normalized;
+  }
+
+  await ensureBillingSatFile();
+  await fs.writeFile(billingSatFile, JSON.stringify(normalized, null, 2), "utf8");
+  return normalized;
+}
+
+function buildCsFacturacionEndpoints(provider) {
+  const useProduction = provider.environment === "production";
+  return {
+    issue: useProduction ? provider.productionEndpoint : provider.demoEndpoint,
+    cancel: useProduction ? provider.productionCancelEndpoint : provider.demoCancelEndpoint,
+  };
+}
+
+function validateFiscalClient(client) {
+  const missing = [];
+  const fiscalAddress = sanitizePlainObject(client.fiscalAddress);
+
+  if (!sanitizeText(client.legalName || client.businessName)) missing.push("razon social");
+  if (!sanitizeText(client.rfc)) missing.push("RFC");
+  if (!sanitizeText(client.taxRegime)) missing.push("regimen fiscal");
+  if (!sanitizeText(client.cfdiUse)) missing.push("uso CFDI");
+  if (!sanitizeText(fiscalAddress.postalCode || client.postalCode)) missing.push("codigo postal");
+
+  return {
+    missing,
+    valid: missing.length === 0,
+  };
+}
+
+function buildCfdiPayload(body, state, clients) {
+  const client = clients.find((item) => item.id === body.clientId) || {};
+  const fiscalAddress = sanitizePlainObject(client.fiscalAddress);
+  const concept = sanitizeText(body.concept);
+  const amount = roundMoney(body.amount);
+  const taxRate = Number(body.taxRate ?? 0.16);
+  const tax = roundMoney(amount * taxRate);
+  const total = roundMoney(amount + tax);
+
+  return {
+    Comprobante: {
+      Serie: sanitizeText(body.series) || "A",
+      Folio: sanitizeText(body.folio) || String(Date.now()),
+      Fecha: new Date().toISOString(),
+      FormaPago: sanitizeText(body.paymentForm) || "03",
+      MetodoPago: sanitizeText(body.paymentMethod) || "PUE",
+      Moneda: "MXN",
+      SubTotal: amount,
+      Total: total,
+      TipoDeComprobante: "I",
+      LugarExpedicion: state.emitter.postalCode,
+    },
+    Emisor: {
+      Rfc: state.emitter.rfc,
+      Nombre: state.emitter.legalName,
+      RegimenFiscal: state.emitter.taxRegime,
+    },
+    Receptor: {
+      Rfc: client.rfc,
+      Nombre: client.legalName || client.businessName,
+      DomicilioFiscalReceptor: fiscalAddress.postalCode || "",
+      RegimenFiscalReceptor: client.taxRegime,
+      UsoCFDI: client.cfdiUse || sanitizeText(body.cfdiUse) || "G03",
+    },
+    Conceptos: [
+      {
+        ClaveProdServ: sanitizeText(body.productServiceKey) || "81112100",
+        Cantidad: Number(body.quantity || 1),
+        ClaveUnidad: sanitizeText(body.unitKey) || "E48",
+        Unidad: sanitizeText(body.unit) || "Servicio",
+        Descripcion: concept,
+        ValorUnitario: amount,
+        Importe: amount,
+        ObjetoImp: "02",
+      },
+    ],
+  };
+}
+
+async function callCsFacturacion(endpoint, credentials, payload) {
+  const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64");
+  const response = await fetch(endpoint, {
+    body: JSON.stringify(payload),
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  const text = await response.text();
+  let data = {};
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_error) {
+    data = { message: text };
+  }
+
+  if (!response.ok) {
+    const error = new Error(data.message || "CSFacturacion rechazo la solicitud.");
+    error.statusCode = response.status;
+    error.details = data;
+    throw error;
+  }
+
+  return data;
 }
 
 async function readApplications() {
@@ -3292,6 +3505,301 @@ app.post("/api/admin/quotes/:id/send", async (req, res, next) => {
   }
 });
 
+app.get("/api/admin/billing/sat", async (_req, res, next) => {
+  try {
+    const [state, clients] = await Promise.all([readBillingSatState(), readClients()]);
+    const cfdis = safeArray(state.cfdis);
+    const metrics = {
+      total: cfdis.length,
+      issued: cfdis.filter((item) => item.status === "issued").length,
+      cancelled: cfdis.filter((item) => item.status === "cancelled").length,
+      pending: cfdis.filter((item) => item.status === "draft" || item.status === "pending").length,
+    };
+
+    return res.json({ ...publicBillingSatState(state), clients, metrics });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.put("/api/admin/billing/sat/provider", async (req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const provider = {
+      ...state.provider,
+      environment: sanitizeText(req.body.environment) === "production" ? "production" : "demo",
+      username: sanitizeText(req.body.username),
+      secretName: sanitizeText(req.body.secretName) || state.provider.secretName,
+      demoEndpoint: sanitizeText(req.body.demoEndpoint) || state.provider.demoEndpoint,
+      productionEndpoint: sanitizeText(req.body.productionEndpoint) || state.provider.productionEndpoint,
+      demoCancelEndpoint: sanitizeText(req.body.demoCancelEndpoint) || state.provider.demoCancelEndpoint,
+      productionCancelEndpoint: sanitizeText(req.body.productionCancelEndpoint) || state.provider.productionCancelEndpoint,
+      configured: Boolean(sanitizeText(req.body.username) && (process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS)),
+      lastVerifiedAt: new Date().toISOString(),
+    };
+    const updated = await writeBillingSatState({ ...state, provider });
+
+    return res.json({ message: "Proveedor SAT actualizado.", ...publicBillingSatState(updated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.put("/api/admin/billing/sat/emitter", async (req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const emitter = {
+      ...state.emitter,
+      legalName: sanitizeText(req.body.legalName) || giovsoftLegalName,
+      rfc: sanitizeText(req.body.rfc).toUpperCase(),
+      taxRegime: sanitizeText(req.body.taxRegime),
+      postalCode: sanitizeText(req.body.postalCode),
+      certificateStatus: sanitizeText(req.body.certificateStatus) || state.emitter.certificateStatus,
+    };
+    const updated = await writeBillingSatState({ ...state, emitter });
+
+    return res.json({ message: "Datos fiscales del emisor actualizados.", ...publicBillingSatState(updated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/billing/sat/series", async (req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const serie = {
+      id: crypto.randomUUID(),
+      company: sanitizeText(req.body.company),
+      serie: sanitizeText(req.body.serie).toUpperCase(),
+      nextFolio: Number(req.body.nextFolio || 1),
+      documentType: sanitizeText(req.body.documentType) || "Ingreso",
+      status: sanitizeText(req.body.status) || "active",
+      createdAt: new Date().toISOString(),
+    };
+
+    if (!serie.company || !serie.serie) {
+      return res.status(400).json({ message: "Empresa y serie son requeridas." });
+    }
+
+    const updated = await writeBillingSatState({ ...state, series: [serie, ...safeArray(state.series)] });
+    return res.status(201).json({ message: "Serie agregada.", ...publicBillingSatState(updated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.patch("/api/admin/billing/sat/series/:id", async (req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const series = safeArray(state.series);
+    const index = series.findIndex((item) => item.id === req.params.id);
+
+    if (index === -1) {
+      return res.status(404).json({ message: "Serie no encontrada." });
+    }
+
+    series[index] = {
+      ...series[index],
+      company: sanitizeText(req.body.company ?? series[index].company),
+      serie: sanitizeText(req.body.serie ?? series[index].serie).toUpperCase(),
+      nextFolio: Number(req.body.nextFolio ?? series[index].nextFolio ?? 1),
+      documentType: sanitizeText(req.body.documentType ?? series[index].documentType),
+      status: sanitizeText(req.body.status ?? series[index].status),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const updated = await writeBillingSatState({ ...state, series });
+    return res.json({ message: "Serie actualizada.", ...publicBillingSatState(updated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/billing/sat/validate-client", async (req, res, next) => {
+  try {
+    const clients = await readClients();
+    const client = clients.find((item) => item.id === req.body.clientId);
+
+    if (!client) {
+      return res.status(404).json({ message: "Cliente no encontrado." });
+    }
+
+    const validation = validateFiscalClient(client);
+    return res.json({
+      client,
+      message: validation.valid ? "Cliente fiscalmente listo para CFDI." : `Faltan datos: ${validation.missing.join(", ")}.`,
+      ...validation,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/billing/sat/issue", async (req, res, next) => {
+  try {
+    const [state, clients] = await Promise.all([readBillingSatState(), readClients()]);
+    const client = clients.find((item) => item.id === req.body.clientId);
+
+    if (!client) {
+      return res.status(404).json({ message: "Cliente no encontrado." });
+    }
+
+    const clientValidation = validateFiscalClient(client);
+    if (!clientValidation.valid) {
+      return res.status(400).json({ message: `El cliente no tiene datos fiscales completos: ${clientValidation.missing.join(", ")}.` });
+    }
+
+    if (!state.emitter.rfc || !state.emitter.taxRegime || !state.emitter.postalCode) {
+      return res.status(400).json({ message: "Completa los datos fiscales del emisor antes de emitir CFDI." });
+    }
+
+    const payload = buildCfdiPayload(req.body, state, clients);
+    const now = new Date().toISOString();
+    const cfdi = {
+      id: crypto.randomUUID(),
+      clientId: client.id,
+      clientName: client.legalName || client.businessName,
+      folio: `${payload.Comprobante.Serie}-${payload.Comprobante.Folio}`,
+      provider: state.provider.name,
+      environment: state.provider.environment,
+      status: "draft",
+      subtotal: payload.Comprobante.SubTotal,
+      tax: roundMoney(payload.Comprobante.Total - payload.Comprobante.SubTotal),
+      total: payload.Comprobante.Total,
+      uuid: "",
+      xmlBase64: "",
+      pdfBase64: "",
+      qrBase64: "",
+      payload,
+      providerResponse: {},
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const credentials = {
+      username: state.provider.username || process.env.CSFACTURACION_USERNAME || process.env.CSFACTURACION_USER,
+      password: process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS,
+    };
+
+    if (process.env.CSFACTURACION_ENABLED === "true" && credentials.username && credentials.password) {
+      const endpoints = buildCsFacturacionEndpoints(state.provider);
+      const providerResponse = await callCsFacturacion(endpoints.issue, credentials, payload);
+      cfdi.status = "issued";
+      cfdi.uuid = providerResponse?.data?.uuid || providerResponse?.uuid || "";
+      cfdi.xmlBase64 = providerResponse?.data?.xml || "";
+      cfdi.pdfBase64 = providerResponse?.data?.pdf || "";
+      cfdi.qrBase64 = providerResponse?.data?.qr || "";
+      cfdi.providerResponse = providerResponse;
+    }
+
+    const updated = await writeBillingSatState({ ...state, cfdis: [cfdi, ...safeArray(state.cfdis)] });
+    return res.status(201).json({
+      cfdi,
+      message: cfdi.status === "issued" ? "CFDI emitido por CSFacturación." : "CFDI preparado en modo simulación. Activa CSFACTURACION_ENABLED para timbrar.",
+      ...publicBillingSatState(updated),
+    });
+  } catch (error) {
+    error.statusCode = error.statusCode || 500;
+    return next(error);
+  }
+});
+
+app.post("/api/admin/billing/sat/:id/cancel", async (req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const cfdis = safeArray(state.cfdis);
+    const index = cfdis.findIndex((item) => item.id === req.params.id);
+
+    if (index === -1) {
+      return res.status(404).json({ message: "CFDI no encontrado." });
+    }
+
+    const cfdi = cfdis[index];
+    const credentials = {
+      username: state.provider.username || process.env.CSFACTURACION_USERNAME || process.env.CSFACTURACION_USER,
+      password: process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS,
+    };
+    let providerResponse = {};
+
+    if (process.env.CSFACTURACION_ENABLED === "true" && cfdi.uuid && credentials.username && credentials.password) {
+      const endpoints = buildCsFacturacionEndpoints(state.provider);
+      providerResponse = await callCsFacturacion(endpoints.cancel, credentials, {
+        motivo: sanitizeText(req.body.motive) || "02",
+        uuid: cfdi.uuid,
+      });
+    }
+
+    cfdis[index] = {
+      ...cfdi,
+      cancelMotive: sanitizeText(req.body.motive) || "02",
+      cancelledAt: new Date().toISOString(),
+      providerResponse: { ...sanitizePlainObject(cfdi.providerResponse), cancellation: providerResponse },
+      status: "cancelled",
+      updatedAt: new Date().toISOString(),
+    };
+    const updated = await writeBillingSatState({ ...state, cfdis });
+
+    return res.json({ cfdi: cfdis[index], message: "CFDI cancelado.", ...publicBillingSatState(updated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/billing/sat/:id/document/:type", async (req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const cfdi = safeArray(state.cfdis).find((item) => item.id === req.params.id);
+    const type = sanitizeText(req.params.type).toLowerCase();
+    const fieldByType = {
+      pdf: "pdfBase64",
+      qr: "qrBase64",
+      xml: "xmlBase64",
+    };
+    const field = fieldByType[type];
+
+    if (!cfdi || !field) {
+      return res.status(404).json({ message: "Documento CFDI no encontrado." });
+    }
+
+    const base64Document = cfdi[field];
+    if (!base64Document) {
+      return res.status(404).json({ message: "El proveedor aun no devolvio ese documento." });
+    }
+
+    const mimeByType = {
+      pdf: "application/pdf",
+      qr: "image/png",
+      xml: "application/xml",
+    };
+    const extension = type === "qr" ? "png" : type;
+    const buffer = Buffer.from(base64Document, "base64");
+
+    res.setHeader("Content-Type", mimeByType[type]);
+    res.setHeader("Content-Disposition", `inline; filename="${cfdi.folio}.${extension}"`);
+    return res.send(buffer);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/billing/sat/catalogs/sync", async (_req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const updated = await writeBillingSatState({
+      ...state,
+      catalogs: {
+        ...state.catalogs,
+        status: "synced",
+        lastSyncAt: new Date().toISOString(),
+      },
+    });
+
+    return res.json({ message: "Catálogos SAT sincronizados.", ...publicBillingSatState(updated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get("/api/admin/applications", async (_req, res, next) => {
   try {
     const applications = await readApplications();
@@ -3470,7 +3978,11 @@ app.get("/api/admin/summary", async (_req, res, next) => {
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  res.status(500).json({ message: "Error interno del servidor." });
+  const statusCode = Number(err.statusCode || 500);
+  res.status(statusCode).json({
+    details: err.details || undefined,
+    message: statusCode >= 500 ? "Error interno del servidor." : err.message,
+  });
 });
 
 app.listen(PORT, () => {
