@@ -30,6 +30,7 @@ export default function Header({ collapsed, onMenuButtonClick }: Props) {
     "/admin/proyectos": { current: "Proyectos" },
     "/admin/aplicaciones": { current: "Aplicaciones" },
     "/admin/planes": { current: "Planes" },
+    "/admin/payments": { current: "Payments" },
     "/admin/facturacion": { current: "Facturación" },
     "/admin/cotizaciones": { current: "Cotizaciones" },
     "/admin/cotizaciones/nueva": { current: "Cotizaciones", next: "Nueva cotización" },

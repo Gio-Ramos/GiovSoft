@@ -19,12 +19,14 @@ const allowedOrigins = (
 )
   .split(",")
   .map((origin) => origin.trim());
+const localDevHostnames = new Set(["localhost", "127.0.0.1", "admin.localhost"]);
 const dataDir = path.join(__dirname, "data");
 const requestsFile = path.join(dataDir, "contact-requests.json");
 const clientsFile = path.join(dataDir, "clients.json");
 const adminUsersFile = path.join(dataDir, "admin-users.json");
 const quotesFile = path.join(dataDir, "quotes.json");
 const billingSatFile = path.join(dataDir, "billing-sat.json");
+const paymentEngineFile = path.join(dataDir, "payment-engine.json");
 const applicationsFile = path.join(dataDir, "connected-applications.json");
 const assetsDir = path.join(__dirname, "assets");
 const logoPath = path.join(assetsDir, "logo-white.svg");
@@ -109,6 +111,31 @@ const quoteStatuses = new Set(["draft", "sent", "accepted", "rejected", "expired
 const applicationStatuses = new Set(["active", "pending", "paused", "error"]);
 
 const defaultBillingSatState = {
+  engine: {
+    name: "GiovSoft SAT Billing Engine",
+    version: "1.0",
+    mode: "centralized",
+    capabilities: [
+      "Emision CFDI desde pagos y facturas internas",
+      "Adaptador CSFacturacion para timbrado y cancelacion",
+      "Presentacion propia de XML, PDF y QR",
+      "Validacion fiscal previa del receptor",
+      "Catalogos SAT sincronizados",
+    ],
+  },
+  connectedSystems: [],
+  webhookEvents: [],
+  webhookSchema: {
+    inboundHeader: "x-giovsoft-billing-secret",
+    outboundSignatureHeader: "x-giovsoft-signature",
+    supportedEvents: [
+      "billing.invoice.requested",
+      "billing.payment.received",
+      "billing.subscription.renewed",
+      "billing.cfdi.requested",
+      "billing.cfdi.cancel.requested",
+    ],
+  },
   provider: {
     name: "CSFacturacion",
     environment: "demo",
@@ -137,6 +164,53 @@ const defaultBillingSatState = {
   },
 };
 
+const defaultPaymentEngineState = {
+  engine: {
+    name: "GiovSoft Payment Engine",
+    version: "1.0",
+    mode: "stripe-connect",
+    capabilities: [
+      "Stripe Connect para cuentas conectadas por sistema",
+      "PaymentIntents, Checkout y Stripe.js",
+      "Pagos recurrentes, suscripciones y conciliacion",
+      "Webhooks propios para sistemas internos",
+      "Eventos Stripe normalizados para facturacion",
+    ],
+  },
+  provider: {
+    name: "Stripe Connect",
+    environment: "test",
+    publishableKey: "",
+    secretName: "stripe-secret-key",
+    webhookSecretName: "stripe-webhook-secret",
+    connectMode: "express",
+    configured: false,
+    lastVerifiedAt: "",
+  },
+  connectedSystems: [],
+  webhookEvents: [],
+  payments: [],
+  subscriptions: [],
+  payouts: [],
+  webhookSchema: {
+    inboundHeader: "x-giovsoft-payments-secret",
+    stripeSignatureHeader: "stripe-signature",
+    supportedEvents: [
+      "payment_intent.succeeded",
+      "payment_intent.payment_failed",
+      "checkout.session.completed",
+      "invoice.paid",
+      "invoice.payment_failed",
+      "customer.subscription.created",
+      "customer.subscription.updated",
+      "customer.subscription.deleted",
+      "account.updated",
+      "payments.payment.received",
+      "payments.subscription.renewed",
+    ],
+  },
+};
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -145,11 +219,29 @@ app.use(
         return;
       }
 
+      try {
+        const parsedOrigin = new URL(origin);
+
+        if (localDevHostnames.has(parsedOrigin.hostname)) {
+          callback(null, true);
+          return;
+        }
+      } catch {
+        // Ignore malformed origins and fall through to the explicit CORS error.
+      }
+
       callback(new Error("Origen no permitido por CORS."));
     },
   })
 );
-app.use(express.json({ limit: "256kb" }));
+app.use(
+  express.json({
+    limit: "256kb",
+    verify(req, _res, buffer) {
+      req.rawBody = buffer.toString("utf8");
+    },
+  })
+);
 
 function base64UrlEncode(value) {
   return Buffer.from(value).toString("base64url");
@@ -1423,6 +1515,12 @@ async function ensureDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS payment_engine_settings (
+      id TEXT PRIMARY KEY,
+      state JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS tickets (
       id UUID PRIMARY KEY,
       client_id UUID REFERENCES clients (id) ON DELETE SET NULL,
@@ -1793,6 +1891,16 @@ async function ensureBillingSatFile() {
   }
 }
 
+async function ensurePaymentEngineFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(paymentEngineFile);
+  } catch {
+    await fs.writeFile(paymentEngineFile, JSON.stringify(defaultPaymentEngineState, null, 2), "utf8");
+  }
+}
+
 async function ensureApplicationsFile() {
   await fs.mkdir(dataDir, { recursive: true });
 
@@ -2153,12 +2261,35 @@ async function writeQuotes(quotes) {
 }
 
 function mergeBillingSatState(state = {}) {
+  const storedEngine = sanitizePlainObject(state.engine);
+  const legacyBillingCapabilities = safeArray(storedEngine.capabilities).some((capability) =>
+    String(capability).toLowerCase().includes("pagos, facturas y suscripciones")
+  );
+
   return {
     ...defaultBillingSatState,
     ...sanitizePlainObject(state),
+    engine: {
+      ...defaultBillingSatState.engine,
+      ...storedEngine,
+      name: storedEngine.name === "GiovSoft Billing Engine" ? defaultBillingSatState.engine.name : storedEngine.name || defaultBillingSatState.engine.name,
+      capabilities:
+        safeArray(storedEngine.capabilities).length && !legacyBillingCapabilities
+          ? safeArray(storedEngine.capabilities)
+          : defaultBillingSatState.engine.capabilities,
+    },
+    webhookSchema: {
+      ...defaultBillingSatState.webhookSchema,
+      ...sanitizePlainObject(state.webhookSchema),
+      supportedEvents: safeArray(state.webhookSchema?.supportedEvents).length
+        ? safeArray(state.webhookSchema.supportedEvents)
+        : defaultBillingSatState.webhookSchema.supportedEvents,
+    },
     provider: { ...defaultBillingSatState.provider, ...sanitizePlainObject(state.provider) },
     emitter: { ...defaultBillingSatState.emitter, ...sanitizePlainObject(state.emitter) },
     catalogs: { ...defaultBillingSatState.catalogs, ...sanitizePlainObject(state.catalogs), items: safeArray(state.catalogs?.items).length ? safeArray(state.catalogs.items) : defaultBillingSatState.catalogs.items },
+    connectedSystems: safeArray(state.connectedSystems),
+    webhookEvents: safeArray(state.webhookEvents),
     series: safeArray(state.series),
     cfdis: safeArray(state.cfdis),
   };
@@ -2214,6 +2345,92 @@ async function writeBillingSatState(state) {
 
   await ensureBillingSatFile();
   await fs.writeFile(billingSatFile, JSON.stringify(normalized, null, 2), "utf8");
+  return normalized;
+}
+
+function mergePaymentEngineState(state = {}) {
+  return {
+    ...defaultPaymentEngineState,
+    ...sanitizePlainObject(state),
+    engine: {
+      ...defaultPaymentEngineState.engine,
+      ...sanitizePlainObject(state.engine),
+      capabilities: safeArray(state.engine?.capabilities).length
+        ? safeArray(state.engine.capabilities)
+        : defaultPaymentEngineState.engine.capabilities,
+    },
+    provider: {
+      ...defaultPaymentEngineState.provider,
+      ...sanitizePlainObject(state.provider),
+      environment: sanitizeText(state.provider?.environment) === "live" ? "live" : "test",
+    },
+    webhookSchema: {
+      ...defaultPaymentEngineState.webhookSchema,
+      ...sanitizePlainObject(state.webhookSchema),
+      supportedEvents: safeArray(state.webhookSchema?.supportedEvents).length
+        ? safeArray(state.webhookSchema.supportedEvents)
+        : defaultPaymentEngineState.webhookSchema.supportedEvents,
+    },
+    connectedSystems: safeArray(state.connectedSystems),
+    webhookEvents: safeArray(state.webhookEvents),
+    payments: safeArray(state.payments),
+    subscriptions: safeArray(state.subscriptions),
+    payouts: safeArray(state.payouts),
+  };
+}
+
+function publicPaymentEngineState(state) {
+  const merged = mergePaymentEngineState(state);
+  return {
+    ...merged,
+    provider: {
+      ...merged.provider,
+      secretConfigured: Boolean(process.env.STRIPE_SECRET_KEY),
+      webhookSecretConfigured: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
+      configured: Boolean(merged.provider.publishableKey && process.env.STRIPE_SECRET_KEY),
+    },
+  };
+}
+
+async function readPaymentEngineState() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const { rows } = await currentPool.query("SELECT state FROM payment_engine_settings WHERE id = 'main' LIMIT 1");
+
+    if (!rows.length) {
+      await writePaymentEngineState(defaultPaymentEngineState);
+      return defaultPaymentEngineState;
+    }
+
+    return mergePaymentEngineState(rows[0].state);
+  }
+
+  await ensurePaymentEngineFile();
+  const raw = await fs.readFile(paymentEngineFile, "utf8");
+  return mergePaymentEngineState(JSON.parse(raw));
+}
+
+async function writePaymentEngineState(state) {
+  const normalized = mergePaymentEngineState(state);
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    await currentPool.query(
+      `
+        INSERT INTO payment_engine_settings (id, state, updated_at)
+        VALUES ('main', $1::jsonb, NOW())
+        ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()
+      `,
+      [JSON.stringify(normalized)]
+    );
+    return normalized;
+  }
+
+  await ensurePaymentEngineFile();
+  await fs.writeFile(paymentEngineFile, JSON.stringify(normalized, null, 2), "utf8");
   return normalized;
 }
 
@@ -2702,6 +2919,20 @@ function createApplicationSecret() {
   return `gws_${crypto.randomBytes(24).toString("base64url")}`;
 }
 
+function publicConnectedApplication(application) {
+  return {
+    apiBaseUrl: application.apiBaseUrl || "",
+    config: sanitizePlainObject(application.config),
+    domain: application.domain || "",
+    id: application.id,
+    lastSync: application.lastSync || "",
+    loginRedirectUrl: application.loginRedirectUrl || "",
+    name: application.name || "",
+    ssoEnabled: application.ssoEnabled !== false,
+    status: application.status || "pending",
+  };
+}
+
 function validateApplicationPayload(body, existingApplication) {
   const status = sanitizeText(body.status || existingApplication?.status || "pending");
   const config = sanitizePlainObject(body.config || existingApplication?.config);
@@ -2761,6 +2992,98 @@ function sanitizeWebhookEvent(body) {
   }
 
   return { payload: { amount, currency, eventType, occurredAt, payload } };
+}
+
+function verifyWebhookSecret(incomingSecret, storedSecret) {
+  if (!incomingSecret || !storedSecret) {
+    return false;
+  }
+
+  const incomingBuffer = Buffer.from(String(incomingSecret));
+  const storedBuffer = Buffer.from(String(storedSecret));
+  return incomingBuffer.length === storedBuffer.length && crypto.timingSafeEqual(incomingBuffer, storedBuffer);
+}
+
+function sanitizeBillingWebhookEvent(body) {
+  const eventType = sanitizeText(body.eventType || body.type);
+  const payload = sanitizePlainObject(body.data || body.payload || {});
+  const amount = roundMoney(body.amount || payload.amount || payload.total || 0);
+  const currency = sanitizeText(body.currency || payload.currency || "MXN");
+  const externalId = sanitizeText(body.externalId || payload.externalId || payload.id);
+  const occurredAt = sanitizeText(body.occurredAt || body.createdAt || payload.createdAt) || new Date().toISOString();
+
+  if (!eventType) {
+    return { error: "El tipo de evento de facturacion es requerido." };
+  }
+
+  if (!defaultBillingSatState.webhookSchema.supportedEvents.includes(eventType)) {
+    return { error: "Evento de facturacion no soportado por el motor." };
+  }
+
+  return { payload: { amount, currency, eventType, externalId, occurredAt, payload } };
+}
+
+function verifyStripeSignature(rawBody, signatureHeader, secret) {
+  if (!rawBody || !signatureHeader || !secret) {
+    return false;
+  }
+
+  const parts = String(signatureHeader)
+    .split(",")
+    .map((part) => part.trim().split("="))
+    .reduce((accumulator, [key, value]) => ({ ...accumulator, [key]: value }), {});
+  const timestamp = parts.t;
+  const signature = parts.v1;
+
+  if (!timestamp || !signature) {
+    return false;
+  }
+
+  const expected = crypto.createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
+  const expectedBuffer = Buffer.from(expected);
+  const signatureBuffer = Buffer.from(signature);
+
+  return expectedBuffer.length === signatureBuffer.length && crypto.timingSafeEqual(expectedBuffer, signatureBuffer);
+}
+
+function sanitizePaymentWebhookEvent(body) {
+  const eventType = sanitizeText(body.eventType || body.type);
+  const payload = sanitizePlainObject(body.data?.object || body.data || body.payload || {});
+  const amount = roundMoney(
+    body.amount ||
+      payload.amount_received ||
+      payload.amount_paid ||
+      payload.amount_total ||
+      payload.amount ||
+      payload.total ||
+      0
+  );
+  const currency = sanitizeText(body.currency || payload.currency || "MXN").toUpperCase();
+  const externalId = sanitizeText(body.externalId || payload.externalId || payload.id || body.id);
+  const connectedAccountId = sanitizeText(body.account || payload.account || payload.stripeAccount || payload.connectedAccountId);
+  const customerId = sanitizeText(payload.customer || payload.customer_id || payload.customerId);
+  const occurredAt = sanitizeText(body.occurredAt || body.createdAt || payload.createdAt) || new Date().toISOString();
+
+  if (!eventType) {
+    return { error: "El tipo de evento de pagos es requerido." };
+  }
+
+  if (!defaultPaymentEngineState.webhookSchema.supportedEvents.includes(eventType)) {
+    return { error: "Evento de pagos no soportado por el motor." };
+  }
+
+  return {
+    payload: {
+      amount,
+      connectedAccountId,
+      currency,
+      customerId,
+      eventType,
+      externalId,
+      occurredAt,
+      payload,
+    },
+  };
 }
 
 function validateClientPayload(body, existingClient) {
@@ -2922,7 +3245,7 @@ app.post("/api/webhooks/applications/:id", async (req, res, next) => {
 
     const webhookSecret = req.get("x-giovsoft-webhook-secret") || "";
 
-    if (!webhookSecret || webhookSecret !== application.webhookSecret) {
+    if (!verifyWebhookSecret(webhookSecret, application.webhookSecret)) {
       return res.status(401).json({ message: "Webhook no autorizado." });
     }
 
@@ -2934,6 +3257,214 @@ app.post("/api/webhooks/applications/:id", async (req, res, next) => {
 
     await storeApplicationWebhookEvent(application, validation.payload);
     return res.status(202).json({ message: "Evento recibido.", eventType: validation.payload.eventType });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/webhooks/payments/stripe/:systemId", async (req, res, next) => {
+  try {
+    const [state, applications] = await Promise.all([readPaymentEngineState(), readApplications()]);
+    const systems = safeArray(state.connectedSystems);
+    const system = systems.find((item) => item.id === req.params.systemId || item.applicationId === req.params.systemId);
+
+    if (!system || system.status !== "active") {
+      return res.status(404).json({ message: "Sistema de pagos no encontrado o inactivo." });
+    }
+
+    const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+
+    if (stripeWebhookSecret && !verifyStripeSignature(req.rawBody, req.get("stripe-signature"), stripeWebhookSecret)) {
+      return res.status(401).json({ message: "Firma Stripe no valida." });
+    }
+
+    const validation = sanitizePaymentWebhookEvent(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const now = new Date().toISOString();
+    const webhookEvent = {
+      id: crypto.randomUUID(),
+      source: "stripe",
+      systemId: system.id,
+      applicationId: system.applicationId,
+      systemName: system.name,
+      status: "received",
+      ...validation.payload,
+      receivedAt: now,
+    };
+    const updatedSystems = systems.map((item) => {
+      if (item.id !== system.id) {
+        return item;
+      }
+
+      const metrics = sanitizePlainObject(item.metrics);
+      const isPayment = ["payment_intent.succeeded", "checkout.session.completed", "invoice.paid", "payments.payment.received"].includes(validation.payload.eventType);
+      const isSubscription = validation.payload.eventType.includes("subscription") || validation.payload.eventType.startsWith("invoice.");
+
+      return {
+        ...item,
+        lastEventAt: now,
+        metrics: {
+          events: Number(metrics.events || 0) + 1,
+          payments: Number(metrics.payments || 0) + (isPayment ? 1 : 0),
+          revenue: Number(metrics.revenue || 0) + (isPayment ? Number(validation.payload.amount || 0) : 0),
+          subscriptions: Number(metrics.subscriptions || 0) + (isSubscription ? 1 : 0),
+        },
+        updatedAt: now,
+      };
+    });
+    const updatedState = {
+      ...state,
+      connectedSystems: updatedSystems,
+      webhookEvents: [webhookEvent, ...safeArray(state.webhookEvents)].slice(0, 300),
+    };
+
+    await writePaymentEngineState(updatedState);
+    return res.status(202).json({
+      eventId: webhookEvent.id,
+      message: "Evento recibido por GiovSoft Payment Engine.",
+      status: webhookEvent.status,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/webhooks/payments/:systemId", async (req, res, next) => {
+  try {
+    const [state, applications] = await Promise.all([readPaymentEngineState(), readApplications()]);
+    const systems = safeArray(state.connectedSystems);
+    const system = systems.find((item) => item.id === req.params.systemId || item.applicationId === req.params.systemId);
+
+    if (!system || system.status !== "active") {
+      return res.status(404).json({ message: "Sistema de pagos no encontrado o inactivo." });
+    }
+
+    const application = applications.find((item) => item.id === system.applicationId);
+    const incomingSecret = req.get("x-giovsoft-payments-secret") || req.get("x-giovsoft-webhook-secret") || "";
+
+    if (!verifyWebhookSecret(incomingSecret, application?.webhookSecret)) {
+      return res.status(401).json({ message: "Webhook de pagos no autorizado." });
+    }
+
+    const validation = sanitizePaymentWebhookEvent(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const now = new Date().toISOString();
+    const webhookEvent = {
+      id: crypto.randomUUID(),
+      source: "giovsoft",
+      systemId: system.id,
+      applicationId: system.applicationId,
+      systemName: system.name,
+      status: "received",
+      ...validation.payload,
+      receivedAt: now,
+    };
+    const updatedSystems = systems.map((item) => {
+      if (item.id !== system.id) {
+        return item;
+      }
+
+      const metrics = sanitizePlainObject(item.metrics);
+      return {
+        ...item,
+        lastEventAt: now,
+        metrics: {
+          events: Number(metrics.events || 0) + 1,
+          payments: Number(metrics.payments || 0) + (validation.payload.eventType === "payments.payment.received" ? 1 : 0),
+          revenue: Number(metrics.revenue || 0) + Number(validation.payload.amount || 0),
+          subscriptions: Number(metrics.subscriptions || 0) + (validation.payload.eventType === "payments.subscription.renewed" ? 1 : 0),
+        },
+        updatedAt: now,
+      };
+    });
+    const updatedState = {
+      ...state,
+      connectedSystems: updatedSystems,
+      webhookEvents: [webhookEvent, ...safeArray(state.webhookEvents)].slice(0, 300),
+    };
+
+    await writePaymentEngineState(updatedState);
+    return res.status(202).json({
+      eventId: webhookEvent.id,
+      message: "Evento recibido por GiovSoft Payment Engine.",
+      status: webhookEvent.status,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/webhooks/billing/:systemId", async (req, res, next) => {
+  try {
+    const [state, applications] = await Promise.all([readBillingSatState(), readApplications()]);
+    const systems = safeArray(state.connectedSystems);
+    const system = systems.find((item) => item.id === req.params.systemId || item.applicationId === req.params.systemId);
+
+    if (!system || system.status !== "active") {
+      return res.status(404).json({ message: "Sistema de facturacion no encontrado o inactivo." });
+    }
+
+    const application = applications.find((item) => item.id === system.applicationId);
+    const incomingSecret = req.get("x-giovsoft-billing-secret") || req.get("x-giovsoft-webhook-secret") || "";
+
+    if (!verifyWebhookSecret(incomingSecret, application?.webhookSecret)) {
+      return res.status(401).json({ message: "Webhook de facturacion no autorizado." });
+    }
+
+    const validation = sanitizeBillingWebhookEvent(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({ message: validation.error });
+    }
+
+    const now = new Date().toISOString();
+    const webhookEvent = {
+      id: crypto.randomUUID(),
+      systemId: system.id,
+      applicationId: system.applicationId,
+      systemName: system.name,
+      status: "received",
+      ...validation.payload,
+      receivedAt: now,
+    };
+    const updatedSystems = systems.map((item) => {
+      if (item.id !== system.id) {
+        return item;
+      }
+
+      const metrics = sanitizePlainObject(item.metrics);
+      return {
+        ...item,
+        lastEventAt: now,
+        metrics: {
+          cfdiRequests: Number(metrics.cfdiRequests || 0) + (validation.payload.eventType === "billing.cfdi.requested" ? 1 : 0),
+          events: Number(metrics.events || 0) + 1,
+          payments: Number(metrics.payments || 0) + (validation.payload.eventType === "billing.payment.received" ? 1 : 0),
+          revenue: Number(metrics.revenue || 0) + Number(validation.payload.amount || 0),
+        },
+        updatedAt: now,
+      };
+    });
+    const updatedState = {
+      ...state,
+      connectedSystems: updatedSystems,
+      webhookEvents: [webhookEvent, ...safeArray(state.webhookEvents)].slice(0, 200),
+    };
+
+    await writeBillingSatState(updatedState);
+    return res.status(202).json({
+      eventId: webhookEvent.id,
+      message: "Evento recibido por GiovSoft Billing Engine.",
+      status: webhookEvent.status,
+    });
   } catch (error) {
     return next(error);
   }
@@ -3505,18 +4036,144 @@ app.post("/api/admin/quotes/:id/send", async (req, res, next) => {
   }
 });
 
+app.get("/api/admin/payments/engine", async (_req, res, next) => {
+  try {
+    const [state, applications, clients] = await Promise.all([readPaymentEngineState(), readApplications(), readClients()]);
+    const connectedSystems = safeArray(state.connectedSystems);
+    const webhookEvents = safeArray(state.webhookEvents);
+    const metrics = {
+      total: webhookEvents.length,
+      systems: connectedSystems.length,
+      payments: connectedSystems.reduce((total, system) => total + Number(system.metrics?.payments || 0), 0),
+      subscriptions: connectedSystems.reduce((total, system) => total + Number(system.metrics?.subscriptions || 0), 0),
+      revenue: connectedSystems.reduce((total, system) => total + Number(system.metrics?.revenue || 0), 0),
+    };
+
+    return res.json({
+      ...publicPaymentEngineState(state),
+      applications: applications.map(publicConnectedApplication),
+      clients,
+      metrics,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/payments/engine/systems", async (req, res, next) => {
+  try {
+    const state = await readPaymentEngineState();
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === req.body.applicationId);
+    const existingSystems = safeArray(state.connectedSystems);
+    const system = {
+      id: crypto.randomUUID(),
+      applicationId: sanitizeText(req.body.applicationId),
+      connectedAccountId: sanitizeText(req.body.connectedAccountId),
+      name: sanitizeText(req.body.name) || application?.name || "Sistema GiovSoft",
+      domain: sanitizeText(req.body.domain) || application?.domain || "",
+      status: sanitizeText(req.body.status) || "active",
+      flow: sanitizeText(req.body.flow) || "checkout-subscriptions-connect",
+      provider: state.provider.name,
+      connectMode: sanitizeText(req.body.connectMode) || state.provider.connectMode,
+      webhookMode: sanitizeText(req.body.webhookMode) || "stripe-and-internal",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (!system.applicationId || !application) {
+      return res.status(400).json({ message: "Selecciona una aplicacion registrada para conectar el sistema de pagos." });
+    }
+
+    if (existingSystems.some((item) => item.applicationId && item.applicationId === system.applicationId)) {
+      return res.status(409).json({ message: "Ese sistema ya esta conectado al motor de pagos." });
+    }
+
+    const updated = await writePaymentEngineState({ ...state, connectedSystems: [system, ...existingSystems] });
+    return res.status(201).json({
+      message: "Sistema conectado al motor de pagos.",
+      ...publicPaymentEngineState(updated),
+      applications: applications.map(publicConnectedApplication),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.put("/api/admin/payments/engine/provider", async (req, res, next) => {
+  try {
+    const state = await readPaymentEngineState();
+    const provider = {
+      ...state.provider,
+      environment: sanitizeText(req.body.environment) === "live" ? "live" : "test",
+      publishableKey: sanitizeText(req.body.publishableKey),
+      secretName: sanitizeText(req.body.secretName) || state.provider.secretName,
+      webhookSecretName: sanitizeText(req.body.webhookSecretName) || state.provider.webhookSecretName,
+      connectMode: sanitizeText(req.body.connectMode) || "express",
+      configured: Boolean(sanitizeText(req.body.publishableKey) && process.env.STRIPE_SECRET_KEY),
+      lastVerifiedAt: new Date().toISOString(),
+    };
+    const updated = await writePaymentEngineState({ ...state, provider });
+
+    return res.json({ message: "Proveedor de pagos actualizado.", ...publicPaymentEngineState(updated) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.get("/api/admin/billing/sat", async (_req, res, next) => {
   try {
-    const [state, clients] = await Promise.all([readBillingSatState(), readClients()]);
+    const [state, clients, applications] = await Promise.all([readBillingSatState(), readClients(), readApplications()]);
     const cfdis = safeArray(state.cfdis);
+    const connectedSystems = safeArray(state.connectedSystems);
     const metrics = {
       total: cfdis.length,
       issued: cfdis.filter((item) => item.status === "issued").length,
       cancelled: cfdis.filter((item) => item.status === "cancelled").length,
       pending: cfdis.filter((item) => item.status === "draft" || item.status === "pending").length,
+      systems: connectedSystems.length,
     };
 
-    return res.json({ ...publicBillingSatState(state), clients, metrics });
+    return res.json({ ...publicBillingSatState(state), applications: applications.map(publicConnectedApplication), clients, metrics });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/billing/sat/systems", async (req, res, next) => {
+  try {
+    const state = await readBillingSatState();
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === req.body.applicationId);
+    const existingSystems = safeArray(state.connectedSystems);
+    const system = {
+      id: crypto.randomUUID(),
+      applicationId: sanitizeText(req.body.applicationId),
+      name: sanitizeText(req.body.name) || application?.name || "Sistema GiovSoft",
+      domain: sanitizeText(req.body.domain) || application?.domain || "",
+      status: sanitizeText(req.body.status) || "active",
+      flow: sanitizeText(req.body.flow) || "payments-invoices-subscriptions",
+      provider: state.provider.name,
+      presentationProfile: sanitizeText(req.body.presentationProfile) || "giovsoft-standard",
+      webhookMode: sanitizeText(req.body.webhookMode) || "outbound",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (!system.applicationId || !application) {
+      return res.status(400).json({ message: "Selecciona una aplicacion registrada para conectar el sistema." });
+    }
+
+    if (existingSystems.some((item) => item.applicationId && item.applicationId === system.applicationId)) {
+      return res.status(409).json({ message: "Ese sistema ya esta conectado al motor de facturacion." });
+    }
+
+    const updated = await writeBillingSatState({ ...state, connectedSystems: [system, ...existingSystems] });
+    return res.status(201).json({
+      message: "Sistema conectado al motor de facturacion.",
+      ...publicBillingSatState(updated),
+      applications: applications.map(publicConnectedApplication),
+    });
   } catch (error) {
     return next(error);
   }

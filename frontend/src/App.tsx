@@ -9,6 +9,7 @@ import AdminFollowups from "./pages/AdminFollowups";
 import AdminPlaceholder from "./pages/AdminPlaceholder";
 import AdminBilling from "./pages/AdminBilling";
 import AdminIntegrations from "./pages/AdminIntegrations";
+import AdminPayments from "./pages/AdminPayments";
 import AdminProfile from "./pages/AdminProfile";
 import AdminProjects from "./pages/AdminProjects";
 import AdminQuotes from "./pages/AdminQuotes";
@@ -153,6 +154,16 @@ function App() {
             <ProtectedAdminRoute>
               <Layout>
                 <AdminPlaceholder title="Planes" />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/payments"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminPayments />
               </Layout>
             </ProtectedAdminRoute>
           }
