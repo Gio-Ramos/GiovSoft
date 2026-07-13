@@ -29,6 +29,7 @@ const billingSatFile = path.join(dataDir, "billing-sat.json");
 const paymentEngineFile = path.join(dataDir, "payment-engine.json");
 const applicationsFile = path.join(dataDir, "connected-applications.json");
 const businessLinesFile = path.join(dataDir, "business-lines.json");
+const ordersFile = path.join(dataDir, "orders.json");
 const assetsDir = path.join(__dirname, "assets");
 const logoPath = path.join(assetsDir, "logo-white.svg");
 const quoteLogoPath = path.join(assetsDir, "logo-black.svg");
@@ -65,6 +66,22 @@ const dataStore = postgresConfigured ? "PostgreSQL" : "JSON local";
 let pool;
 let databaseReady = false;
 const twoFactorChallenges = new Map();
+const IVA_RATE = 0.16;
+const orderStatuses = new Set(["draft", "pending", "paid", "failed", "expired", "refunded"]);
+
+// Cliente Stripe perezoso: sin STRIPE_SECRET_KEY el checkout opera en modo
+// simulación (mismo patrón que CSFACTURACION_ENABLED para CFDI).
+let stripeClient = null;
+function getStripe() {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return null;
+  }
+  if (!stripeClient) {
+    const Stripe = require("stripe");
+    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+  }
+  return stripeClient;
+}
 
 // Líneas de negocio de GiovSoft. UUIDs fijos para que despliegues en JSON y
 // PostgreSQL produzcan los mismos ids (las aplicaciones referencian estos ids).
@@ -1699,6 +1716,39 @@ async function ensureDatabase() {
 
     ALTER TABLE connected_applications ADD COLUMN IF NOT EXISTS business_line_id UUID;
     ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_line_id UUID;
+    ALTER TABLE connected_applications ADD COLUMN IF NOT EXISTS api_key TEXT;
+    ALTER TABLE connected_applications ADD COLUMN IF NOT EXISTS outbound_webhook_url TEXT;
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id UUID PRIMARY KEY,
+      application_id UUID REFERENCES connected_applications (id) ON DELETE SET NULL,
+      business_line_id UUID REFERENCES business_lines (id) ON DELETE SET NULL,
+      sku TEXT,
+      plan TEXT,
+      concept TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      subtotal NUMERIC(12,2) NOT NULL,
+      tax NUMERIC(12,2) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      status TEXT NOT NULL DEFAULT 'pending',
+      stripe_session_id TEXT,
+      stripe_payment_intent_id TEXT,
+      external_ref TEXT,
+      idempotency_key TEXT,
+      customer JSONB NOT NULL DEFAULT '{}'::jsonb,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      cfdi_id TEXT,
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_app_idempotency
+      ON orders (application_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_orders_stripe_session ON orders (stripe_session_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_line_created ON orders (business_line_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
+    CREATE INDEX IF NOT EXISTS idx_orders_external_ref ON orders (external_ref);
   `);
 
   databaseReady = true;
@@ -1819,6 +1869,32 @@ function mapBusinessLineRow(row) {
   };
 }
 
+function mapOrderRow(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id || "",
+    businessLineId: row.business_line_id || "",
+    sku: row.sku || "",
+    plan: row.plan || "",
+    concept: row.concept,
+    amount: Number(row.amount || 0),
+    subtotal: Number(row.subtotal || 0),
+    tax: Number(row.tax || 0),
+    currency: row.currency || "MXN",
+    status: row.status || "pending",
+    stripeSessionId: row.stripe_session_id || "",
+    stripePaymentIntentId: row.stripe_payment_intent_id || "",
+    externalRef: row.external_ref || "",
+    idempotencyKey: row.idempotency_key || "",
+    customer: sanitizePlainObject(row.customer),
+    metadata: sanitizePlainObject(row.metadata),
+    cfdiId: row.cfdi_id || "",
+    paidAt: toIsoDate(row.paid_at),
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
 function mapApplicationRow(row, metrics = {}) {
   return {
     id: row.id,
@@ -1826,6 +1902,8 @@ function mapApplicationRow(row, metrics = {}) {
     domain: row.domain || "",
     apiBaseUrl: row.api_base_url || "",
     businessLineId: row.business_line_id || "",
+    apiKey: row.api_key || "",
+    outboundWebhookUrl: row.outbound_webhook_url || "",
     status: row.status || "pending",
     ssoEnabled: Boolean(row.sso_enabled),
     webhookSecret: row.webhook_secret || "",
@@ -1992,6 +2070,16 @@ async function ensureBusinessLinesFile() {
     const now = new Date().toISOString();
     const seeded = defaultBusinessLines.map((line) => ({ ...line, createdAt: now, updatedAt: now }));
     await fs.writeFile(businessLinesFile, JSON.stringify(seeded, null, 2), "utf8");
+  }
+}
+
+async function ensureOrdersFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(ordersFile);
+  } catch {
+    await fs.writeFile(ordersFile, "[]", "utf8");
   }
 }
 
@@ -2666,9 +2754,10 @@ async function writeApplications(applications) {
           `
             INSERT INTO connected_applications (
               id, name, domain, api_base_url, status, sso_enabled, webhook_secret,
-              login_redirect_url, last_sync, config, business_line_id, created_at, updated_at
+              login_redirect_url, last_sync, config, business_line_id, api_key,
+              outbound_webhook_url, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15)
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
               domain = EXCLUDED.domain,
@@ -2680,6 +2769,8 @@ async function writeApplications(applications) {
               last_sync = EXCLUDED.last_sync,
               config = EXCLUDED.config,
               business_line_id = EXCLUDED.business_line_id,
+              api_key = EXCLUDED.api_key,
+              outbound_webhook_url = EXCLUDED.outbound_webhook_url,
               created_at = EXCLUDED.created_at,
               updated_at = EXCLUDED.updated_at
           `,
@@ -2695,6 +2786,8 @@ async function writeApplications(applications) {
             application.lastSync || null,
             JSON.stringify(sanitizePlainObject(application.config)),
             application.businessLineId || null,
+            application.apiKey || null,
+            application.outboundWebhookUrl || null,
             application.createdAt || new Date().toISOString(),
             application.updatedAt || new Date().toISOString(),
           ]
@@ -2791,6 +2884,198 @@ async function writeBusinessLines(businessLines) {
 
   await ensureBusinessLinesFile();
   await fs.writeFile(businessLinesFile, JSON.stringify(businessLines, null, 2), "utf8");
+}
+
+async function readOrdersFileList() {
+  await ensureOrdersFile();
+  const raw = await fs.readFile(ordersFile, "utf8");
+  return JSON.parse(raw);
+}
+
+async function saveOrder(order) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    await currentPool.query(
+      `
+        INSERT INTO orders (
+          id, application_id, business_line_id, sku, plan, concept, amount, subtotal, tax,
+          currency, status, stripe_session_id, stripe_payment_intent_id, external_ref,
+          idempotency_key, customer, metadata, cfdi_id, paid_at, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19, $20, $21)
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          stripe_session_id = EXCLUDED.stripe_session_id,
+          stripe_payment_intent_id = EXCLUDED.stripe_payment_intent_id,
+          customer = EXCLUDED.customer,
+          metadata = EXCLUDED.metadata,
+          cfdi_id = EXCLUDED.cfdi_id,
+          paid_at = EXCLUDED.paid_at,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        order.id,
+        order.applicationId || null,
+        order.businessLineId || null,
+        order.sku || null,
+        order.plan || null,
+        order.concept,
+        order.amount,
+        order.subtotal,
+        order.tax,
+        order.currency || "MXN",
+        order.status || "pending",
+        order.stripeSessionId || null,
+        order.stripePaymentIntentId || null,
+        order.externalRef || null,
+        order.idempotencyKey || null,
+        JSON.stringify(sanitizePlainObject(order.customer)),
+        JSON.stringify(sanitizePlainObject(order.metadata)),
+        order.cfdiId || null,
+        order.paidAt || null,
+        order.createdAt || new Date().toISOString(),
+        order.updatedAt || new Date().toISOString(),
+      ]
+    );
+    return;
+  }
+
+  const orders = await readOrdersFileList();
+  const orderIndex = orders.findIndex((item) => item.id === order.id);
+
+  if (orderIndex === -1) {
+    orders.unshift(order);
+  } else {
+    orders[orderIndex] = order;
+  }
+
+  await fs.writeFile(ordersFile, JSON.stringify(orders, null, 2), "utf8");
+}
+
+async function findOrder(criteria) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const conditions = [];
+    const values = [];
+
+    if (criteria.id) {
+      values.push(criteria.id);
+      conditions.push(`id = $${values.length}`);
+    }
+    if (criteria.stripeSessionId) {
+      values.push(criteria.stripeSessionId);
+      conditions.push(`stripe_session_id = $${values.length}`);
+    }
+    if (criteria.applicationId) {
+      values.push(criteria.applicationId);
+      conditions.push(`application_id = $${values.length}`);
+    }
+    if (criteria.idempotencyKey) {
+      values.push(criteria.idempotencyKey);
+      conditions.push(`idempotency_key = $${values.length}`);
+    }
+
+    if (conditions.length === 0) {
+      return null;
+    }
+
+    const { rows } = await currentPool.query(
+      `SELECT * FROM orders WHERE ${conditions.join(" AND ")} LIMIT 1`,
+      values
+    );
+    return rows[0] ? mapOrderRow(rows[0]) : null;
+  }
+
+  const orders = await readOrdersFileList();
+  return (
+    orders.find(
+      (order) =>
+        (!criteria.id || order.id === criteria.id) &&
+        (!criteria.stripeSessionId || order.stripeSessionId === criteria.stripeSessionId) &&
+        (!criteria.applicationId || order.applicationId === criteria.applicationId) &&
+        (!criteria.idempotencyKey || order.idempotencyKey === criteria.idempotencyKey)
+    ) || null
+  );
+}
+
+async function listOrders(filters = {}) {
+  const limit = Math.min(Number(filters.limit) || 50, 200);
+  const offset = Math.max(Number(filters.offset) || 0, 0);
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const conditions = [];
+    const values = [];
+
+    if (filters.applicationId) {
+      values.push(filters.applicationId);
+      conditions.push(`application_id = $${values.length}`);
+    }
+    if (filters.businessLineId) {
+      values.push(filters.businessLineId);
+      conditions.push(`business_line_id = $${values.length}`);
+    }
+    if (filters.status) {
+      values.push(filters.status);
+      conditions.push(`status = $${values.length}`);
+    }
+    if (filters.externalRef) {
+      values.push(filters.externalRef);
+      conditions.push(`external_ref = $${values.length}`);
+    }
+    if (filters.uninvoiced) {
+      conditions.push("(cfdi_id IS NULL OR cfdi_id = '')");
+    }
+    if (filters.from) {
+      values.push(filters.from);
+      conditions.push(`created_at >= $${values.length}`);
+    }
+    if (filters.to) {
+      values.push(filters.to);
+      conditions.push(`created_at <= $${values.length}`);
+    }
+    if (filters.search) {
+      values.push(`%${filters.search.toLowerCase()}%`);
+      conditions.push(
+        `(LOWER(concept) LIKE $${values.length} OR LOWER(COALESCE(external_ref, '')) LIKE $${values.length} OR LOWER(COALESCE(customer->>'email', '')) LIKE $${values.length})`
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const [rowsResult, countResult] = await Promise.all([
+      currentPool.query(
+        `SELECT * FROM orders ${whereClause} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+        values
+      ),
+      currentPool.query(`SELECT COUNT(*)::int AS total FROM orders ${whereClause}`, values),
+    ]);
+
+    return { orders: rowsResult.rows.map(mapOrderRow), total: countResult.rows[0].total };
+  }
+
+  const allOrders = await readOrdersFileList();
+  const search = (filters.search || "").toLowerCase();
+  const filtered = allOrders.filter(
+    (order) =>
+      (!filters.applicationId || order.applicationId === filters.applicationId) &&
+      (!filters.businessLineId || order.businessLineId === filters.businessLineId) &&
+      (!filters.status || order.status === filters.status) &&
+      (!filters.externalRef || order.externalRef === filters.externalRef) &&
+      (!filters.uninvoiced || !order.cfdiId) &&
+      (!filters.from || order.createdAt >= filters.from) &&
+      (!filters.to || order.createdAt <= filters.to) &&
+      (!search ||
+        order.concept.toLowerCase().includes(search) ||
+        (order.externalRef || "").toLowerCase().includes(search) ||
+        (order.customer?.email || "").toLowerCase().includes(search))
+  );
+
+  return { orders: filtered.slice(offset, offset + limit), total: filtered.length };
 }
 
 async function storeApplicationWebhookEvent(application, event) {
@@ -3082,6 +3367,10 @@ function createApplicationSecret() {
   return `gws_${crypto.randomBytes(24).toString("base64url")}`;
 }
 
+function createApplicationApiKey() {
+  return `gwk_${crypto.randomBytes(24).toString("hex")}`;
+}
+
 function publicConnectedApplication(application) {
   return {
     apiBaseUrl: application.apiBaseUrl || "",
@@ -3109,6 +3398,10 @@ function validateApplicationPayload(body, existingApplication) {
     status: applicationStatuses.has(status) ? status : "pending",
     ssoEnabled: body.ssoEnabled !== undefined ? Boolean(body.ssoEnabled) : existingApplication?.ssoEnabled !== false,
     webhookSecret: sanitizeText(body.webhookSecret || existingApplication?.webhookSecret || createApplicationSecret()),
+    apiKey: sanitizeText(existingApplication?.apiKey || createApplicationApiKey()),
+    outboundWebhookUrl: sanitizeText(
+      body.outboundWebhookUrl !== undefined ? body.outboundWebhookUrl : existingApplication?.outboundWebhookUrl
+    ),
     loginRedirectUrl: sanitizeText(body.loginRedirectUrl || existingApplication?.loginRedirectUrl),
     config: {
       syncUsers: config.syncUsers !== false,
@@ -3633,6 +3926,325 @@ app.post("/api/webhooks/billing/:systemId", async (req, res, next) => {
     });
   } catch (error) {
     return next(error);
+  }
+});
+
+/* ============================================================
+   Motor de checkout centralizado (API para productos, /api/v1)
+   ============================================================ */
+
+// Autenticación de aplicaciones conectadas: x-giovsoft-app-id + x-giovsoft-api-key.
+async function requireApplicationAuth(req, res, next) {
+  try {
+    const applicationId = sanitizeText(req.get("x-giovsoft-app-id"));
+    const apiKey = sanitizeText(req.get("x-giovsoft-api-key"));
+
+    if (!applicationId || !apiKey) {
+      return res.status(401).json({ message: "Credenciales de aplicación requeridas." });
+    }
+
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === applicationId);
+
+    if (!application || !verifyWebhookSecret(apiKey, application.apiKey)) {
+      return res.status(401).json({ message: "Credenciales de aplicación inválidas." });
+    }
+
+    if (application.status !== "active") {
+      return res.status(403).json({ message: "La aplicación no está activa en el hub." });
+    }
+
+    req.application = application;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+// Vista pública de una orden para el producto (nunca expone datos internos).
+function publicOrder(order) {
+  return {
+    id: order.id,
+    status: order.status,
+    concept: order.concept,
+    sku: order.sku,
+    plan: order.plan,
+    amount: order.amount,
+    subtotal: order.subtotal,
+    tax: order.tax,
+    currency: order.currency,
+    externalRef: order.externalRef,
+    customer: order.customer,
+    metadata: order.metadata,
+    stripeSessionId: order.stripeSessionId,
+    cfdi: order.cfdiId ? { id: order.cfdiId } : null,
+    paidAt: order.paidAt || null,
+    createdAt: order.createdAt,
+  };
+}
+
+// Marca una orden como pagada y propaga: métricas de la aplicación (motor de
+// pagos existente) y, en fases siguientes, webhook saliente al producto.
+async function handleOrderPaid(order, application, extra = {}) {
+  if (order.status === "paid") {
+    return order;
+  }
+
+  const paidOrder = {
+    ...order,
+    status: "paid",
+    paidAt: new Date().toISOString(),
+    stripePaymentIntentId: extra.paymentIntentId || order.stripePaymentIntentId || "",
+    updatedAt: new Date().toISOString(),
+  };
+  await saveOrder(paidOrder);
+
+  if (application) {
+    await storeApplicationWebhookEvent(application, {
+      eventType: "payment.received",
+      amount: paidOrder.amount,
+      currency: paidOrder.currency,
+      occurredAt: paidOrder.paidAt,
+      payload: {
+        orderId: paidOrder.id,
+        concept: paidOrder.concept,
+        plan: paidOrder.plan,
+        externalRef: paidOrder.externalRef,
+        source: "hub-checkout",
+      },
+    }).catch((error) => console.error("No se pudo registrar el evento de pago:", error.message));
+  }
+
+  await notifyOrderEvent(paidOrder, application, "order.paid");
+  return paidOrder;
+}
+
+// Punto de extensión para webhooks salientes (implementado en la fase de
+// notificaciones): por ahora solo registra en consola.
+async function notifyOrderEvent(order, application, eventType) {
+  console.log(`[orden ${order.id}] evento ${eventType} para ${application?.name || "app desconocida"}`);
+}
+
+app.post("/api/v1/checkout/sessions", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const application = req.application;
+    const idempotencyKey = sanitizeText(req.get("x-idempotency-key"));
+
+    if (!idempotencyKey) {
+      return res.status(400).json({ message: "El encabezado x-idempotency-key es requerido." });
+    }
+
+    // Replay idempotente: misma llave → misma orden.
+    const existingOrder = await findOrder({ applicationId: application.id, idempotencyKey });
+    if (existingOrder) {
+      return res.status(200).json({
+        order: publicOrder(existingOrder),
+        checkoutUrl: existingOrder.metadata?.checkoutUrl || null,
+        replayed: true,
+      });
+    }
+
+    const concept = sanitizeText(req.body.concept);
+    const amountTotal = roundMoney(Number(req.body.amountTotal));
+    const externalRef = sanitizeText(req.body.externalRef);
+    const successUrl = sanitizeText(req.body.successUrl);
+    const cancelUrl = sanitizeText(req.body.cancelUrl);
+
+    if (!concept) {
+      return res.status(400).json({ message: "El concepto es requerido." });
+    }
+    if (!Number.isFinite(amountTotal) || amountTotal <= 0) {
+      return res.status(400).json({ message: "El monto total (amountTotal) debe ser mayor a cero." });
+    }
+    if (!externalRef) {
+      return res.status(400).json({ message: "La referencia externa (externalRef) es requerida." });
+    }
+
+    for (const [field, value] of [["successUrl", successUrl], ["cancelUrl", cancelUrl]]) {
+      if (!value) {
+        return res.status(400).json({ message: `La URL ${field} es requerida.` });
+      }
+      try {
+        new URL(value);
+      } catch (_error) {
+        return res.status(400).json({ message: `La URL ${field} no es válida.` });
+      }
+    }
+
+    const subtotal = roundMoney(amountTotal / (1 + IVA_RATE));
+    const tax = roundMoney(amountTotal - subtotal);
+    const now = new Date().toISOString();
+    const order = {
+      id: crypto.randomUUID(),
+      applicationId: application.id,
+      businessLineId: application.businessLineId || "",
+      sku: sanitizeText(req.body.sku),
+      plan: sanitizeText(req.body.plan),
+      concept,
+      amount: amountTotal,
+      subtotal,
+      tax,
+      currency: sanitizeText(req.body.currency).toUpperCase() || "MXN",
+      status: "pending",
+      stripeSessionId: "",
+      stripePaymentIntentId: "",
+      externalRef,
+      idempotencyKey,
+      customer: sanitizePlainObject(req.body.customer),
+      metadata: sanitizePlainObject(req.body.metadata),
+      cfdiId: "",
+      paidAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const stripe = getStripe();
+
+    if (!stripe) {
+      // Modo simulación: sin llaves de Stripe la orden queda pendiente y se
+      // confirma con mark-paid desde el admin (útil en desarrollo y pruebas).
+      order.metadata = { ...order.metadata, simulated: true };
+      await saveOrder(order);
+      return res.status(201).json({ order: publicOrder(order), checkoutUrl: null, simulated: true });
+    }
+
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: order.currency.toLowerCase(),
+              unit_amount: Math.round(order.amount * 100),
+              product_data: { name: order.concept },
+            },
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        customer_email: order.customer.email || undefined,
+        metadata: {
+          orderId: order.id,
+          applicationId: application.id,
+          businessLineId: order.businessLineId,
+          externalRef: order.externalRef,
+          plan: order.plan,
+          sku: order.sku,
+          subtotal: String(order.subtotal),
+          tax: String(order.tax),
+        },
+        payment_intent_data: { metadata: { orderId: order.id } },
+      },
+      { idempotencyKey: `checkout-${order.id}` }
+    );
+
+    order.stripeSessionId = session.id;
+    order.metadata = { ...order.metadata, checkoutUrl: session.url };
+    await saveOrder(order);
+
+    return res.status(201).json({
+      order: publicOrder(order),
+      checkoutUrl: session.url,
+      expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+    });
+  } catch (error) {
+    if (error?.type?.startsWith("Stripe")) {
+      console.error("Error de Stripe al crear la sesión:", error.message);
+      return res.status(502).json({ message: "No se pudo crear la sesión de pago con Stripe." });
+    }
+    return next(error);
+  }
+});
+
+app.get("/api/v1/orders/:orderId", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+
+    return res.json({ order: publicOrder(order) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/v1/orders", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const { orders, total } = await listOrders({
+      applicationId: req.application.id,
+      externalRef: sanitizeText(req.query.externalRef),
+      status: sanitizeText(req.query.status),
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+
+    return res.json({ orders: orders.map(publicOrder), total });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Webhook global de Stripe para el checkout centralizado (verificado con el
+// SDK; la ruta legacy por sistema /api/webhooks/payments/stripe/:systemId
+// sigue funcionando igual que antes).
+app.post("/api/webhooks/stripe", async (req, res) => {
+  const stripe = getStripe();
+
+  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
+    return res.status(503).json({ message: "Stripe no está configurado en el hub." });
+  }
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody, req.get("stripe-signature"), process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (error) {
+    return res.status(400).json({ message: `Firma de Stripe inválida: ${error.message}` });
+  }
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const order =
+        (session.metadata?.orderId && (await findOrder({ id: session.metadata.orderId }))) ||
+        (await findOrder({ stripeSessionId: session.id }));
+
+      if (!order) {
+        // Evento de una sesión que no creó el hub (p. ej. stripe trigger): se ignora.
+        console.warn(`Webhook Stripe sin orden asociada (session ${session.id}).`);
+        return res.json({ received: true, ignored: true });
+      }
+
+      const applications = await readApplications();
+      const application = applications.find((item) => item.id === order.applicationId) || null;
+      await handleOrderPaid(order, application, { paymentIntentId: session.payment_intent || "" });
+    } else if (event.type === "checkout.session.expired") {
+      const session = event.data.object;
+      const order = await findOrder({ stripeSessionId: session.id });
+
+      if (order && order.status === "pending") {
+        await saveOrder({ ...order, status: "expired", updatedAt: new Date().toISOString() });
+      }
+    } else if (event.type === "charge.refunded") {
+      const charge = event.data.object;
+      const orderId = charge.metadata?.orderId || "";
+      const order = orderId ? await findOrder({ id: orderId }) : null;
+
+      if (order && order.status === "paid") {
+        const refundedOrder = { ...order, status: "refunded", updatedAt: new Date().toISOString() };
+        await saveOrder(refundedOrder);
+        const applications = await readApplications();
+        const application = applications.find((item) => item.id === order.applicationId) || null;
+        await notifyOrderEvent(refundedOrder, application, "order.refunded");
+      }
+    }
+
+    return res.json({ received: true });
+  } catch (error) {
+    console.error("Error procesando webhook de Stripe:", error);
+    return res.status(500).json({ message: "Error interno procesando el evento." });
   }
 });
 
@@ -4789,6 +5401,91 @@ app.patch("/api/admin/business-lines/:id", async (req, res, next) => {
     await writeBusinessLines(businessLines);
 
     return res.json({ businessLine: updated, message: "Línea de negocio actualizada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/orders", async (req, res, next) => {
+  try {
+    const { orders, total } = await listOrders({
+      applicationId: sanitizeText(req.query.applicationId),
+      businessLineId: sanitizeText(req.query.businessLineId),
+      status: sanitizeText(req.query.status),
+      uninvoiced: req.query.uninvoiced === "1",
+      from: sanitizeText(req.query.from),
+      to: sanitizeText(req.query.to),
+      search: sanitizeText(req.query.q),
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+
+    return res.json({ orders, total });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/orders/:id", async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+
+    return res.json({ order });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Confirmación manual (modo simulación sin Stripe, o conciliación).
+app.post("/api/admin/orders/:id/mark-paid", async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+
+    if (order.status === "paid") {
+      return res.status(409).json({ message: "La orden ya está pagada." });
+    }
+
+    if (!["pending", "failed", "expired"].includes(order.status)) {
+      return res.status(400).json({ message: `No se puede marcar como pagada una orden en estado ${order.status}.` });
+    }
+
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === order.applicationId) || null;
+    const paidOrder = await handleOrderPaid(order, application, {});
+    console.log(`[admin] orden ${paidOrder.id} marcada como pagada (${paidOrder.concept}, $${paidOrder.amount}).`);
+
+    return res.json({ order: paidOrder, message: "Orden marcada como pagada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/applications/:id/api-key", async (req, res, next) => {
+  try {
+    const applications = await readApplications();
+    const applicationIndex = applications.findIndex((application) => application.id === req.params.id);
+
+    if (applicationIndex === -1) {
+      return res.status(404).json({ message: "Aplicación no encontrada." });
+    }
+
+    const apiKey = createApplicationApiKey();
+    applications[applicationIndex] = {
+      ...applications[applicationIndex],
+      apiKey,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeApplications(applications);
+
+    return res.json({ apiKey, message: "API key regenerada. Guárdala: no se volverá a mostrar completa." });
   } catch (error) {
     return next(error);
   }

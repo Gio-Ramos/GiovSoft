@@ -35,6 +35,7 @@ interface ConnectedApplication {
   status: ApplicationStatus;
   ssoEnabled: boolean;
   webhookSecret: string;
+  apiKey: string;
   loginRedirectUrl: string;
   lastSync: string;
   config?: Record<string, boolean | string>;
@@ -230,6 +231,19 @@ export default function AdminApplications() {
     }
   }
 
+  async function regenerateApiKey(application: ConnectedApplication) {
+    setOpenMenu("");
+    try {
+      const response = await api.post(`/api/admin/applications/${application.id}/api-key`);
+      const apiKey = response.data.apiKey as string;
+      setApplications((current) => current.map((item) => (item.id === application.id ? { ...item, apiKey } : item)));
+      await navigator.clipboard.writeText(apiKey);
+      setMessage("API key regenerada y copiada al portapapeles.");
+    } catch (error: any) {
+      setMessage(error?.response?.data?.message || "No se pudo regenerar la API key.");
+    }
+  }
+
   async function copyText(value: string) {
     await navigator.clipboard.writeText(value);
     setMessage("Dato copiado al portapapeles.");
@@ -320,6 +334,7 @@ export default function AdminApplications() {
                     <div className="application-connection-box">
                       <button onClick={() => copyText(webhookUrl(application.id))} type="button"><Copy size={14} /> Webhook</button>
                       <button onClick={() => copyText(application.webhookSecret)} type="button"><KeyRound size={14} /> Secreto</button>
+                      <button onClick={() => copyText(application.apiKey)} type="button"><KeyRound size={14} /> API key</button>
                     </div>
                   </td>
                   <td>
@@ -329,6 +344,7 @@ export default function AdminApplications() {
                       <button onClick={() => updateStatus(application, "active")} type="button"><CheckCircle2 size={15} /> Activar</button>
                       <button onClick={() => updateStatus(application, "paused")} type="button">Pausar</button>
                       <button onClick={() => updateStatus(application, "error")} type="button">Marcar revisión</button>
+                      <button onClick={() => regenerateApiKey(application)} type="button">Regenerar API key</button>
                     </div>
                   </td>
                 </tr>
