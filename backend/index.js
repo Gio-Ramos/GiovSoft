@@ -30,6 +30,7 @@ const paymentEngineFile = path.join(dataDir, "payment-engine.json");
 const applicationsFile = path.join(dataDir, "connected-applications.json");
 const businessLinesFile = path.join(dataDir, "business-lines.json");
 const ordersFile = path.join(dataDir, "orders.json");
+const outboundDeliveriesFile = path.join(dataDir, "outbound-webhook-deliveries.json");
 const assetsDir = path.join(__dirname, "assets");
 const logoPath = path.join(assetsDir, "logo-white.svg");
 const quoteLogoPath = path.join(assetsDir, "logo-black.svg");
@@ -68,6 +69,9 @@ let databaseReady = false;
 const twoFactorChallenges = new Map();
 const IVA_RATE = 0.16;
 const orderStatuses = new Set(["draft", "pending", "paid", "failed", "expired", "refunded"]);
+// Reintentos de webhooks salientes: 5 intentos con backoff creciente.
+const outboundRetryDelaysMs = [30 * 1000, 2 * 60 * 1000, 10 * 60 * 1000, 30 * 60 * 1000, 2 * 60 * 60 * 1000];
+const outboundTimeoutMs = 10 * 1000;
 
 // Cliente Stripe perezoso: sin STRIPE_SECRET_KEY el checkout opera en modo
 // simulación (mismo patrón que CSFACTURACION_ENABLED para CFDI).
@@ -1749,6 +1753,28 @@ async function ensureDatabase() {
     CREATE INDEX IF NOT EXISTS idx_orders_line_created ON orders (business_line_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
     CREATE INDEX IF NOT EXISTS idx_orders_external_ref ON orders (external_ref);
+
+    CREATE TABLE IF NOT EXISTS outbound_webhook_deliveries (
+      id UUID PRIMARY KEY,
+      application_id UUID REFERENCES connected_applications (id) ON DELETE CASCADE,
+      order_id UUID,
+      event_type TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      target_url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INT NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ,
+      last_status_code INT,
+      last_error TEXT,
+      delivered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_outbound_deliveries_pending
+      ON outbound_webhook_deliveries (status, next_attempt_at);
+    CREATE INDEX IF NOT EXISTS idx_outbound_deliveries_order
+      ON outbound_webhook_deliveries (order_id);
   `);
 
   databaseReady = true;
@@ -1890,6 +1916,25 @@ function mapOrderRow(row) {
     metadata: sanitizePlainObject(row.metadata),
     cfdiId: row.cfdi_id || "",
     paidAt: toIsoDate(row.paid_at),
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
+function mapDeliveryRow(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id || "",
+    orderId: row.order_id || "",
+    eventType: row.event_type,
+    payload: sanitizePlainObject(row.payload),
+    targetUrl: row.target_url,
+    status: row.status || "pending",
+    attempts: Number(row.attempts || 0),
+    nextAttemptAt: toIsoDate(row.next_attempt_at),
+    lastStatusCode: row.last_status_code === null || row.last_status_code === undefined ? null : Number(row.last_status_code),
+    lastError: row.last_error || "",
+    deliveredAt: toIsoDate(row.delivered_at),
     createdAt: toIsoDate(row.created_at),
     updatedAt: toIsoDate(row.updated_at),
   };
@@ -2080,6 +2125,16 @@ async function ensureOrdersFile() {
     await fs.access(ordersFile);
   } catch {
     await fs.writeFile(ordersFile, "[]", "utf8");
+  }
+}
+
+async function ensureOutboundDeliveriesFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(outboundDeliveriesFile);
+  } catch {
+    await fs.writeFile(outboundDeliveriesFile, "[]", "utf8");
   }
 }
 
@@ -3078,6 +3133,205 @@ async function listOrders(filters = {}) {
   return { orders: filtered.slice(offset, offset + limit), total: filtered.length };
 }
 
+async function saveDelivery(delivery) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    await currentPool.query(
+      `
+        INSERT INTO outbound_webhook_deliveries (
+          id, application_id, order_id, event_type, payload, target_url, status,
+          attempts, next_attempt_at, last_status_code, last_error, delivered_at,
+          created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          attempts = EXCLUDED.attempts,
+          next_attempt_at = EXCLUDED.next_attempt_at,
+          last_status_code = EXCLUDED.last_status_code,
+          last_error = EXCLUDED.last_error,
+          delivered_at = EXCLUDED.delivered_at,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        delivery.id,
+        delivery.applicationId || null,
+        delivery.orderId || null,
+        delivery.eventType,
+        JSON.stringify(sanitizePlainObject(delivery.payload)),
+        delivery.targetUrl,
+        delivery.status || "pending",
+        delivery.attempts || 0,
+        delivery.nextAttemptAt || null,
+        delivery.lastStatusCode === null || delivery.lastStatusCode === undefined ? null : delivery.lastStatusCode,
+        delivery.lastError || null,
+        delivery.deliveredAt || null,
+        delivery.createdAt || new Date().toISOString(),
+        delivery.updatedAt || new Date().toISOString(),
+      ]
+    );
+    return;
+  }
+
+  await ensureOutboundDeliveriesFile();
+  const raw = await fs.readFile(outboundDeliveriesFile, "utf8");
+  const deliveries = JSON.parse(raw);
+  const deliveryIndex = deliveries.findIndex((item) => item.id === delivery.id);
+
+  if (deliveryIndex === -1) {
+    deliveries.unshift(delivery);
+  } else {
+    deliveries[deliveryIndex] = delivery;
+  }
+
+  await fs.writeFile(outboundDeliveriesFile, JSON.stringify(deliveries.slice(0, 500), null, 2), "utf8");
+}
+
+async function listDeliveries(filters = {}) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const conditions = [];
+    const values = [];
+
+    if (filters.orderId) {
+      values.push(filters.orderId);
+      conditions.push(`order_id = $${values.length}`);
+    }
+    if (filters.id) {
+      values.push(filters.id);
+      conditions.push(`id = $${values.length}`);
+    }
+    if (filters.duePending) {
+      // Se compara contra la hora del hub (quien escribió next_attempt_at),
+      // no contra NOW() de la BD: evita desfases de reloj entre procesos.
+      values.push(new Date().toISOString());
+      conditions.push(`status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= $${values.length})`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const { rows } = await currentPool.query(
+      `SELECT * FROM outbound_webhook_deliveries ${whereClause} ORDER BY created_at DESC LIMIT 50`
+    , values);
+    return rows.map(mapDeliveryRow);
+  }
+
+  await ensureOutboundDeliveriesFile();
+  const raw = await fs.readFile(outboundDeliveriesFile, "utf8");
+  const deliveries = JSON.parse(raw);
+  const now = new Date().toISOString();
+
+  return deliveries
+    .filter(
+      (delivery) =>
+        (!filters.orderId || delivery.orderId === filters.orderId) &&
+        (!filters.id || delivery.id === filters.id) &&
+        (!filters.duePending || (delivery.status === "pending" && (!delivery.nextAttemptAt || delivery.nextAttemptAt <= now)))
+    )
+    .slice(0, 50);
+}
+
+// Firma estilo Stripe con el webhook secret (gws_) de la aplicación:
+// x-giovsoft-signature: t=<unix>,v1=<hmac-sha256(secret, "<t>.<body>")>
+function signOutboundPayload(secret, rawBody) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
+  return `t=${timestamp},v1=${signature}`;
+}
+
+// Intenta entregar un webhook saliente y actualiza su estado/reintentos.
+async function attemptDelivery(delivery, application) {
+  const rawBody = JSON.stringify(delivery.payload);
+  const attemptNumber = (delivery.attempts || 0) + 1;
+  const now = new Date().toISOString();
+  let statusCode = null;
+  let errorMessage = "";
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), outboundTimeoutMs);
+    const response = await fetch(delivery.targetUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-giovsoft-signature": signOutboundPayload(application.webhookSecret, rawBody),
+        "x-giovsoft-event-id": delivery.id,
+        "x-giovsoft-event-type": delivery.eventType,
+      },
+      body: rawBody,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    statusCode = response.status;
+
+    if (response.ok) {
+      await saveDelivery({
+        ...delivery,
+        status: "delivered",
+        attempts: attemptNumber,
+        lastStatusCode: statusCode,
+        lastError: "",
+        deliveredAt: now,
+        nextAttemptAt: null,
+        updatedAt: now,
+      });
+      return true;
+    }
+
+    errorMessage = `HTTP ${statusCode}`;
+  } catch (error) {
+    errorMessage = error.name === "AbortError" ? `Timeout tras ${outboundTimeoutMs / 1000}s` : error.message;
+  }
+
+  const exhausted = attemptNumber >= outboundRetryDelaysMs.length;
+  // Tras el intento N fallido se espera el retraso N-1: [30s, 2m, 10m, 30m, 2h].
+  const nextDelay = outboundRetryDelaysMs[Math.min(attemptNumber - 1, outboundRetryDelaysMs.length - 1)];
+
+  await saveDelivery({
+    ...delivery,
+    status: exhausted ? "exhausted" : "pending",
+    attempts: attemptNumber,
+    lastStatusCode: statusCode,
+    lastError: errorMessage,
+    nextAttemptAt: exhausted ? null : new Date(Date.now() + nextDelay).toISOString(),
+    updatedAt: now,
+  });
+  return false;
+}
+
+// Barrido periódico de entregas pendientes vencidas. Nota para Cloud Run:
+// con scale-to-zero este intervalo solo corre con una instancia caliente;
+// el polling del producto (GET /api/v1/orders/:id) cubre los huecos.
+async function sweepPendingDeliveries() {
+  try {
+    const dueDeliveries = await listDeliveries({ duePending: true });
+
+    if (dueDeliveries.length === 0) {
+      return;
+    }
+
+    const applications = await readApplications();
+
+    for (const delivery of dueDeliveries.slice(0, 20)) {
+      const application = applications.find((item) => item.id === delivery.applicationId);
+
+      if (!application) {
+        await saveDelivery({ ...delivery, status: "exhausted", lastError: "Aplicación no encontrada", updatedAt: new Date().toISOString() });
+        continue;
+      }
+
+      await attemptDelivery(delivery, application);
+    }
+  } catch (error) {
+    console.error("Error en el barrido de webhooks salientes:", error.message);
+  }
+}
+
+setInterval(sweepPendingDeliveries, 30 * 1000).unref();
+
 async function storeApplicationWebhookEvent(application, event) {
   const currentPool = getPool();
   const now = new Date().toISOString();
@@ -4019,10 +4273,66 @@ async function handleOrderPaid(order, application, extra = {}) {
   return paidOrder;
 }
 
-// Punto de extensión para webhooks salientes (implementado en la fase de
-// notificaciones): por ahora solo registra en consola.
+// Webhook saliente al producto: crea el registro de entrega y hace el primer
+// intento en línea (los reintentos corren en el barrido cada 30s).
 async function notifyOrderEvent(order, application, eventType) {
-  console.log(`[orden ${order.id}] evento ${eventType} para ${application?.name || "app desconocida"}`);
+  if (!application) {
+    console.warn(`[orden ${order.id}] evento ${eventType} sin aplicación asociada; no se notifica.`);
+    return;
+  }
+
+  const targetUrl =
+    sanitizeText(application.outboundWebhookUrl) ||
+    `${String(application.apiBaseUrl || "").replace(/\/$/, "")}/api/payments/hub-webhook`;
+
+  if (!targetUrl.startsWith("http")) {
+    console.warn(`[orden ${order.id}] la aplicación ${application.name} no tiene URL de webhook válida.`);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const delivery = {
+    id: crypto.randomUUID(),
+    applicationId: application.id,
+    orderId: order.id,
+    eventType,
+    payload: {
+      id: crypto.randomUUID(),
+      eventType,
+      occurredAt: now,
+      data: {
+        orderId: order.id,
+        externalRef: order.externalRef,
+        plan: order.plan,
+        sku: order.sku,
+        concept: order.concept,
+        amount: order.amount,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        currency: order.currency,
+        status: order.status,
+        paidAt: order.paidAt || null,
+        stripeSessionId: order.stripeSessionId,
+        customer: order.customer,
+        metadata: order.metadata,
+      },
+    },
+    targetUrl,
+    status: "pending",
+    attempts: 0,
+    nextAttemptAt: now,
+    lastStatusCode: null,
+    lastError: "",
+    deliveredAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await saveDelivery(delivery);
+  // Primer intento inmediato, sin bloquear la respuesta del webhook de Stripe.
+  attemptDelivery(delivery, application).catch((error) =>
+    console.error(`[orden ${order.id}] error en el primer intento de entrega:`, error.message)
+  );
 }
 
 app.post("/api/v1/checkout/sessions", requireApplicationAuth, async (req, res, next) => {
@@ -5434,7 +5744,40 @@ app.get("/api/admin/orders/:id", async (req, res, next) => {
       return res.status(404).json({ message: "Orden no encontrada." });
     }
 
-    return res.json({ order });
+    const deliveries = await listDeliveries({ orderId: order.id });
+    return res.json({ order, deliveries });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Reintento manual de una entrega saliente (delivered no se reintenta).
+app.post("/api/admin/orders/:id/deliveries/:deliveryId/retry", async (req, res, next) => {
+  try {
+    const [delivery] = await listDeliveries({ id: req.params.deliveryId });
+
+    if (!delivery || delivery.orderId !== req.params.id) {
+      return res.status(404).json({ message: "Entrega no encontrada." });
+    }
+
+    if (delivery.status === "delivered") {
+      return res.status(409).json({ message: "La entrega ya fue exitosa." });
+    }
+
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === delivery.applicationId);
+
+    if (!application) {
+      return res.status(404).json({ message: "La aplicación de la entrega ya no existe." });
+    }
+
+    const delivered = await attemptDelivery({ ...delivery, status: "pending" }, application);
+    const [updated] = await listDeliveries({ id: delivery.id });
+
+    return res.json({
+      delivery: updated,
+      message: delivered ? "Entrega reenviada con éxito." : "El reintento falló; se reprogramó según el backoff.",
+    });
   } catch (error) {
     return next(error);
   }
