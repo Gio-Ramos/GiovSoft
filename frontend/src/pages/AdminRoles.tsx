@@ -52,6 +52,7 @@ interface RoleForm {
 const storageKey = "giovsoft-admin-roles-v2";
 
 const permissionModules: PermissionModule[] = [
+  { key: "businessLines", name: "Líneas de negocio", description: "Catálogo de líneas de negocio y su asignación a aplicaciones." },
   { key: "dashboard", name: "Dashboard", description: "Resumen general y métricas del panel." },
   { key: "clients", name: "Clientes", description: "Consulta y administración de clientes." },
   { key: "users", name: "Usuarios", description: "Cuentas, accesos y contraseñas temporales." },
@@ -73,6 +74,12 @@ const actionLabels: Record<PermissionAction, string> = {
 const actionOrder: PermissionAction[] = ["view", "create", "edit", "delete"];
 
 const permissionDetails: Record<string, { title: string; description: string; action: PermissionAction }[]> = {
+  businessLines: [
+    { title: "Ver líneas de negocio", description: "Permite consultar el catálogo y sus métricas.", action: "view" },
+    { title: "Crear líneas", description: "Permite agregar nuevas líneas de negocio.", action: "create" },
+    { title: "Editar líneas", description: "Permite renombrar, cambiar color y archivar líneas.", action: "edit" },
+    { title: "Asignar aplicaciones", description: "Permite vincular aplicaciones a una línea.", action: "delete" },
+  ],
   dashboard: [
     { title: "Ver dashboard", description: "Permite ver el panel principal del sistema.", action: "view" },
     { title: "Acceso a estadísticas", description: "Permite ver métricas y gráficos.", action: "create" },

@@ -1,4 +1,5 @@
 import {
+  Layers,
   AppWindow,
   Boxes,
   BriefcaseBusiness,
@@ -37,6 +38,7 @@ const menuSections = [
   {
     title: "Productos",
     items: [
+      { name: "Líneas de negocio", icon: Layers, path: "/admin/lineas-negocio" },
       { name: "Servicios", icon: Boxes, path: "/admin/servicios" },
       { name: "Aplicaciones", icon: AppWindow, path: "/admin/aplicaciones" },
       { name: "Proyectos", icon: BriefcaseBusiness, path: "/admin/proyectos" },

@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 import AdminApplications from "./pages/AdminApplications";
+import AdminBusinessLines from "./pages/AdminBusinessLines";
 import AdminAudit from "./pages/AdminAudit";
 import AdminClients from "./pages/AdminClients";
 import AdminCompanies from "./pages/AdminCompanies";
@@ -134,6 +135,16 @@ function App() {
             <ProtectedAdminRoute>
               <Layout>
                 <AdminApplications />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/lineas-negocio"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminBusinessLines />
               </Layout>
             </ProtectedAdminRoute>
           }

@@ -13228,3 +13228,13 @@ body:has(.app-shell),
     right: 0.75rem;
   }
 }
+
+/* Líneas de negocio */
+.business-line-chip {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}

@@ -28,6 +28,7 @@ const quotesFile = path.join(dataDir, "quotes.json");
 const billingSatFile = path.join(dataDir, "billing-sat.json");
 const paymentEngineFile = path.join(dataDir, "payment-engine.json");
 const applicationsFile = path.join(dataDir, "connected-applications.json");
+const businessLinesFile = path.join(dataDir, "business-lines.json");
 const assetsDir = path.join(__dirname, "assets");
 const logoPath = path.join(assetsDir, "logo-white.svg");
 const quoteLogoPath = path.join(assetsDir, "logo-black.svg");
@@ -64,6 +65,47 @@ const dataStore = postgresConfigured ? "PostgreSQL" : "JSON local";
 let pool;
 let databaseReady = false;
 const twoFactorChallenges = new Map();
+
+// Líneas de negocio de GiovSoft. UUIDs fijos para que despliegues en JSON y
+// PostgreSQL produzcan los mismos ids (las aplicaciones referencian estos ids).
+const defaultBusinessLines = [
+  {
+    id: "7c9e6b1a-4f2d-4a8e-9c3b-1e5a7d2f8b4c",
+    slug: "gesove",
+    name: "Gesove",
+    description: "Invitaciones digitales para eventos (gesove.com).",
+    color: "#B08D57",
+    icon: "Mail",
+    status: "active",
+  },
+  {
+    id: "3a8f2c5d-9b1e-4d7a-8f6c-2b4e9a1d5c7e",
+    slug: "academy",
+    name: "GiovSoft Academy",
+    description: "Cursos de tecnología, membresías y certificaciones.",
+    color: "#4F46E5",
+    icon: "GraduationCap",
+    status: "active",
+  },
+  {
+    id: "5e2b8d4f-1c7a-4e9b-a3d8-6f4c2e8b9a1d",
+    slug: "servicios-web",
+    name: "Servicios Web GiovSoft",
+    description: "Desarrollo web, ecommerce, dominios, correos y hosting.",
+    color: "#0891B2",
+    icon: "Globe",
+    status: "active",
+  },
+  {
+    id: "9d4a7e2c-6b8f-4c1d-b5e9-3a7f1c5d8e2b",
+    slug: "clinic",
+    name: "GiovSoft Clinic",
+    description: "Soluciones para clínicas y consultorios.",
+    color: "#059669",
+    icon: "Stethoscope",
+    status: "active",
+  },
+];
 
 const serviceDetails = {
   "GiovSoft 360": {
@@ -1642,6 +1684,21 @@ async function ensureDatabase() {
       updated_by UUID REFERENCES admin_users (id) ON DELETE SET NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS business_lines (
+      id UUID PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT,
+      icon TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    ALTER TABLE connected_applications ADD COLUMN IF NOT EXISTS business_line_id UUID;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_line_id UUID;
   `);
 
   databaseReady = true;
@@ -1748,12 +1805,27 @@ function mapQuoteRow(row) {
   };
 }
 
+function mapBusinessLineRow(row) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description || "",
+    color: row.color || "",
+    icon: row.icon || "",
+    status: row.status || "active",
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
 function mapApplicationRow(row, metrics = {}) {
   return {
     id: row.id,
     name: row.name,
     domain: row.domain || "",
     apiBaseUrl: row.api_base_url || "",
+    businessLineId: row.business_line_id || "",
     status: row.status || "pending",
     ssoEnabled: Boolean(row.sso_enabled),
     webhookSecret: row.webhook_secret || "",
@@ -1908,6 +1980,18 @@ async function ensureApplicationsFile() {
     await fs.access(applicationsFile);
   } catch {
     await fs.writeFile(applicationsFile, "[]", "utf8");
+  }
+}
+
+async function ensureBusinessLinesFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(businessLinesFile);
+  } catch {
+    const now = new Date().toISOString();
+    const seeded = defaultBusinessLines.map((line) => ({ ...line, createdAt: now, updatedAt: now }));
+    await fs.writeFile(businessLinesFile, JSON.stringify(seeded, null, 2), "utf8");
   }
 }
 
@@ -2582,9 +2666,9 @@ async function writeApplications(applications) {
           `
             INSERT INTO connected_applications (
               id, name, domain, api_base_url, status, sso_enabled, webhook_secret,
-              login_redirect_url, last_sync, config, created_at, updated_at
+              login_redirect_url, last_sync, config, business_line_id, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
               domain = EXCLUDED.domain,
@@ -2595,6 +2679,7 @@ async function writeApplications(applications) {
               login_redirect_url = EXCLUDED.login_redirect_url,
               last_sync = EXCLUDED.last_sync,
               config = EXCLUDED.config,
+              business_line_id = EXCLUDED.business_line_id,
               created_at = EXCLUDED.created_at,
               updated_at = EXCLUDED.updated_at
           `,
@@ -2609,6 +2694,7 @@ async function writeApplications(applications) {
             application.loginRedirectUrl || null,
             application.lastSync || null,
             JSON.stringify(sanitizePlainObject(application.config)),
+            application.businessLineId || null,
             application.createdAt || new Date().toISOString(),
             application.updatedAt || new Date().toISOString(),
           ]
@@ -2628,6 +2714,83 @@ async function writeApplications(applications) {
 
   await ensureApplicationsFile();
   await fs.writeFile(applicationsFile, JSON.stringify(applications, null, 2), "utf8");
+}
+
+async function readBusinessLines() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+
+    const { rows } = await currentPool.query("SELECT * FROM business_lines ORDER BY created_at ASC");
+
+    if (rows.length === 0) {
+      // Primera ejecución: sembrar el catálogo con UUIDs fijos.
+      const now = new Date().toISOString();
+      const seeded = defaultBusinessLines.map((line) => ({ ...line, createdAt: now, updatedAt: now }));
+      await writeBusinessLines(seeded);
+      return seeded;
+    }
+
+    return rows.map(mapBusinessLineRow);
+  }
+
+  await ensureBusinessLinesFile();
+  const raw = await fs.readFile(businessLinesFile, "utf8");
+  return JSON.parse(raw);
+}
+
+async function writeBusinessLines(businessLines) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const client = await currentPool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      for (const line of businessLines) {
+        await client.query(
+          `
+            INSERT INTO business_lines (id, slug, name, description, color, icon, status, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO UPDATE SET
+              slug = EXCLUDED.slug,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              color = EXCLUDED.color,
+              icon = EXCLUDED.icon,
+              status = EXCLUDED.status,
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            line.id,
+            line.slug,
+            line.name,
+            line.description || null,
+            line.color || null,
+            line.icon || null,
+            line.status || "active",
+            line.createdAt || new Date().toISOString(),
+            line.updatedAt || new Date().toISOString(),
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return;
+  }
+
+  await ensureBusinessLinesFile();
+  await fs.writeFile(businessLinesFile, JSON.stringify(businessLines, null, 2), "utf8");
 }
 
 async function storeApplicationWebhookEvent(application, event) {
@@ -2940,6 +3103,9 @@ function validateApplicationPayload(body, existingApplication) {
     name: sanitizeText(body.name || existingApplication?.name),
     domain: sanitizeText(body.domain || existingApplication?.domain),
     apiBaseUrl: sanitizeText(body.apiBaseUrl || existingApplication?.apiBaseUrl),
+    businessLineId: sanitizeText(
+      body.businessLineId !== undefined ? body.businessLineId : existingApplication?.businessLineId
+    ),
     status: applicationStatuses.has(status) ? status : "pending",
     ssoEnabled: body.ssoEnabled !== undefined ? Boolean(body.ssoEnabled) : existingApplication?.ssoEnabled !== false,
     webhookSecret: sanitizeText(body.webhookSecret || existingApplication?.webhookSecret || createApplicationSecret()),
@@ -4520,6 +4686,109 @@ app.patch("/api/admin/applications/:id", async (req, res, next) => {
     await writeApplications(applications);
 
     return res.json({ application: updatedApplication, message: "Aplicación actualizada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/business-lines", async (_req, res, next) => {
+  try {
+    const [businessLines, applications] = await Promise.all([readBusinessLines(), readApplications()]);
+
+    // Roll-up por línea a partir de las métricas de sus aplicaciones.
+    const withMetrics = businessLines.map((line) => {
+      const lineApps = applications.filter((application) => application.businessLineId === line.id);
+      return {
+        ...line,
+        metrics: {
+          applications: lineApps.length,
+          events: lineApps.reduce((total, app) => total + Number(app.metrics?.events || 0), 0),
+          payments: lineApps.reduce((total, app) => total + Number(app.metrics?.payments || 0), 0),
+          revenue: lineApps.reduce((total, app) => total + Number(app.metrics?.revenue || 0), 0),
+        },
+        applications: lineApps.map((app) => ({ id: app.id, name: app.name, status: app.status })),
+      };
+    });
+
+    return res.json({ businessLines: withMetrics });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/business-lines", async (req, res, next) => {
+  try {
+    const name = sanitizeText(req.body.name);
+    const slug = sanitizeText(req.body.slug).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+
+    if (!name) {
+      return res.status(400).json({ message: "El nombre de la línea de negocio es requerido." });
+    }
+
+    if (!slug) {
+      return res.status(400).json({ message: "El identificador (slug) es requerido." });
+    }
+
+    const businessLines = await readBusinessLines();
+
+    if (businessLines.some((line) => line.slug === slug)) {
+      return res.status(409).json({ message: "Ya existe una línea de negocio con ese identificador." });
+    }
+
+    const now = new Date().toISOString();
+    const businessLine = {
+      id: crypto.randomUUID(),
+      slug,
+      name,
+      description: sanitizeText(req.body.description),
+      color: sanitizeText(req.body.color),
+      icon: sanitizeText(req.body.icon),
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    businessLines.push(businessLine);
+    await writeBusinessLines(businessLines);
+
+    return res.status(201).json({ businessLine, message: "Línea de negocio creada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.patch("/api/admin/business-lines/:id", async (req, res, next) => {
+  try {
+    const businessLines = await readBusinessLines();
+    const lineIndex = businessLines.findIndex((line) => line.id === req.params.id);
+
+    if (lineIndex === -1) {
+      return res.status(404).json({ message: "Línea de negocio no encontrada." });
+    }
+
+    const current = businessLines[lineIndex];
+    const status = sanitizeText(req.body.status || current.status);
+
+    if (!["active", "archived"].includes(status)) {
+      return res.status(400).json({ message: "Estado inválido (active o archived)." });
+    }
+
+    // El slug es inmutable: las órdenes y aplicaciones lo referencian por id,
+    // pero los enlaces del panel usan el slug.
+    const updated = {
+      ...current,
+      name: sanitizeText(req.body.name || current.name),
+      description: req.body.description !== undefined ? sanitizeText(req.body.description) : current.description,
+      color: req.body.color !== undefined ? sanitizeText(req.body.color) : current.color,
+      icon: req.body.icon !== undefined ? sanitizeText(req.body.icon) : current.icon,
+      status,
+      updatedAt: new Date().toISOString(),
+    };
+
+    businessLines[lineIndex] = updated;
+    await writeBusinessLines(businessLines);
+
+    return res.json({ businessLine: updated, message: "Línea de negocio actualizada." });
   } catch (error) {
     return next(error);
   }
