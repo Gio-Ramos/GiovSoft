@@ -3133,6 +3133,81 @@ async function listOrders(filters = {}) {
   return { orders: filtered.slice(offset, offset + limit), total: filtered.length };
 }
 
+// Resumen de ventas: KPIs, serie mensual y desgloses por línea/aplicación.
+// Calcula en JS sobre las órdenes filtradas (volúmenes actuales lo permiten
+// en ambos modos de storage; si crece, migrar a agregados SQL).
+async function buildSalesSummary({ businessLineId = "", months = 6 } = {}) {
+  const [{ orders }, businessLines, applications] = await Promise.all([
+    listOrders({ businessLineId, limit: 200000 }),
+    readBusinessLines(),
+    readApplications(),
+  ]);
+
+  const monthCount = Math.min(Math.max(Number(months) || 6, 1), 24);
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const paidOrders = orders.filter((order) => order.status === "paid");
+
+  const kpis = {
+    revenueTotal: roundMoney(paidOrders.reduce((total, order) => total + order.amount, 0)),
+    revenueThisMonth: roundMoney(
+      paidOrders.filter((order) => (order.paidAt || "").startsWith(thisMonth)).reduce((total, order) => total + order.amount, 0)
+    ),
+    paidOrders: paidOrders.length,
+    avgTicket: paidOrders.length > 0 ? roundMoney(paidOrders.reduce((total, order) => total + order.amount, 0) / paidOrders.length) : 0,
+    pendingOrders: orders.filter((order) => order.status === "pending").length,
+    refundedAmount: roundMoney(
+      orders.filter((order) => order.status === "refunded").reduce((total, order) => total + order.amount, 0)
+    ),
+  };
+
+  const monthlyRevenue = [];
+  const reference = new Date();
+  for (let index = monthCount - 1; index >= 0; index -= 1) {
+    const monthDate = new Date(reference.getFullYear(), reference.getMonth() - index, 1);
+    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
+    const monthOrders = paidOrders.filter((order) => (order.paidAt || "").startsWith(monthKey));
+    monthlyRevenue.push({
+      month: monthKey,
+      revenue: roundMoney(monthOrders.reduce((total, order) => total + order.amount, 0)),
+      orders: monthOrders.length,
+    });
+  }
+
+  const byLine = businessLines.map((line) => {
+    const lineOrders = paidOrders.filter((order) => order.businessLineId === line.id);
+    return {
+      businessLineId: line.id,
+      slug: line.slug,
+      name: line.name,
+      color: line.color,
+      status: line.status,
+      revenue: roundMoney(lineOrders.reduce((total, order) => total + order.amount, 0)),
+      orders: lineOrders.length,
+    };
+  });
+
+  const byApplication = applications
+    .map((application) => {
+      const appOrders = paidOrders.filter((order) => order.applicationId === application.id);
+      return {
+        applicationId: application.id,
+        name: application.name,
+        businessLineId: application.businessLineId || "",
+        revenue: roundMoney(appOrders.reduce((total, order) => total + order.amount, 0)),
+        orders: appOrders.length,
+      };
+    })
+    .filter((entry) => entry.orders > 0 || !businessLineId);
+
+  return {
+    kpis,
+    monthlyRevenue,
+    byLine,
+    byApplication,
+    recentOrders: orders.slice(0, 10),
+  };
+}
+
 async function saveDelivery(delivery) {
   const currentPool = getPool();
 
@@ -5811,6 +5886,19 @@ app.post("/api/admin/orders/:id/mark-paid", async (req, res, next) => {
   }
 });
 
+app.get("/api/admin/sales/summary", async (req, res, next) => {
+  try {
+    const summary = await buildSalesSummary({
+      businessLineId: sanitizeText(req.query.businessLineId),
+      months: req.query.months,
+    });
+
+    return res.json(summary);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.post("/api/admin/applications/:id/api-key", async (req, res, next) => {
   try {
     const applications = await readApplications();
@@ -5931,6 +6019,7 @@ app.get("/api/admin/summary", async (_req, res, next) => {
         },
       ],
       recentRequests,
+      revenue: (await buildSalesSummary({ months: 6 }).catch(() => null)) || undefined,
       priorities: [
         "Contactar solicitudes nuevas durante el mismo dia.",
         "Clasificar cada lead por servicio: GiovSoft 360, web, ecommerce o Workspace.",

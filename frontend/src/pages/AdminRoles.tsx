@@ -53,6 +53,7 @@ const storageKey = "giovsoft-admin-roles-v2";
 
 const permissionModules: PermissionModule[] = [
   { key: "businessLines", name: "Líneas de negocio", description: "Catálogo de líneas de negocio y su asignación a aplicaciones." },
+  { key: "sales", name: "Ventas", description: "Órdenes e ingresos del checkout centralizado, globales y por línea." },
   { key: "dashboard", name: "Dashboard", description: "Resumen general y métricas del panel." },
   { key: "clients", name: "Clientes", description: "Consulta y administración de clientes." },
   { key: "users", name: "Usuarios", description: "Cuentas, accesos y contraseñas temporales." },
@@ -74,6 +75,12 @@ const actionLabels: Record<PermissionAction, string> = {
 const actionOrder: PermissionAction[] = ["view", "create", "edit", "delete"];
 
 const permissionDetails: Record<string, { title: string; description: string; action: PermissionAction }[]> = {
+  sales: [
+    { title: "Ver ventas", description: "Permite consultar órdenes, ingresos y desgloses.", action: "view" },
+    { title: "Confirmar pagos", description: "Permite marcar órdenes como pagadas (conciliación).", action: "create" },
+    { title: "Reintentar notificaciones", description: "Permite reenviar webhooks a los productos.", action: "edit" },
+    { title: "Exportar reportes", description: "Permite descargar la información de ventas.", action: "delete" },
+  ],
   businessLines: [
     { title: "Ver líneas de negocio", description: "Permite consultar el catálogo y sus métricas.", action: "view" },
     { title: "Crear líneas", description: "Permite agregar nuevas líneas de negocio.", action: "create" },

@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
 import AdminApplications from "./pages/AdminApplications";
 import AdminBusinessLines from "./pages/AdminBusinessLines";
+import AdminSales from "./pages/AdminSales";
 import AdminAudit from "./pages/AdminAudit";
 import AdminClients from "./pages/AdminClients";
 import AdminCompanies from "./pages/AdminCompanies";
@@ -145,6 +146,16 @@ function App() {
             <ProtectedAdminRoute>
               <Layout>
                 <AdminBusinessLines />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/ventas"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminSales />
               </Layout>
             </ProtectedAdminRoute>
           }
