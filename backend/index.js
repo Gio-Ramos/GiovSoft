@@ -2685,8 +2685,8 @@ function validateFiscalClient(client) {
   };
 }
 
-function buildCfdiPayload(body, state, clients) {
-  const client = clients.find((item) => item.id === body.clientId) || {};
+function buildCfdiPayloadForReceptor(body, state, receptor) {
+  const client = receptor || {};
   const fiscalAddress = sanitizePlainObject(client.fiscalAddress);
   const concept = sanitizeText(body.concept);
   const amount = roundMoney(body.amount);
@@ -2732,6 +2732,58 @@ function buildCfdiPayload(body, state, clients) {
       },
     ],
   };
+}
+
+function buildCfdiPayload(body, state, clients) {
+  const client = clients.find((item) => item.id === body.clientId) || {};
+  return buildCfdiPayloadForReceptor(body, state, client);
+}
+
+// Timbra (si CSFacturación está habilitado) y guarda el CFDI en el estado de
+// facturación. Compartido por la emisión admin y la API de productos.
+async function stampAndStoreCfdi(state, payload, meta = {}) {
+  const now = new Date().toISOString();
+  const cfdi = {
+    id: crypto.randomUUID(),
+    clientId: meta.clientId || "",
+    clientName: meta.clientName || payload.Receptor.Nombre || "",
+    orderId: meta.orderId || "",
+    businessLineId: meta.businessLineId || "",
+    folio: `${payload.Comprobante.Serie}-${payload.Comprobante.Folio}`,
+    provider: state.provider.name,
+    environment: state.provider.environment,
+    status: "draft",
+    subtotal: payload.Comprobante.SubTotal,
+    tax: roundMoney(payload.Comprobante.Total - payload.Comprobante.SubTotal),
+    total: payload.Comprobante.Total,
+    uuid: "",
+    xmlBase64: "",
+    pdfBase64: "",
+    qrBase64: "",
+    payload,
+    providerResponse: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const credentials = {
+    username: state.provider.username || process.env.CSFACTURACION_USERNAME || process.env.CSFACTURACION_USER,
+    password: process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS,
+  };
+
+  if (process.env.CSFACTURACION_ENABLED === "true" && credentials.username && credentials.password) {
+    const endpoints = buildCsFacturacionEndpoints(state.provider);
+    const providerResponse = await callCsFacturacion(endpoints.issue, credentials, payload);
+    cfdi.status = "issued";
+    cfdi.uuid = providerResponse?.data?.uuid || providerResponse?.uuid || "";
+    cfdi.xmlBase64 = providerResponse?.data?.xml || "";
+    cfdi.pdfBase64 = providerResponse?.data?.pdf || "";
+    cfdi.qrBase64 = providerResponse?.data?.qr || "";
+    cfdi.providerResponse = providerResponse;
+  }
+
+  const updatedState = await writeBillingSatState({ ...state, cfdis: [cfdi, ...safeArray(state.cfdis)] });
+  return { cfdi, updatedState };
 }
 
 async function callCsFacturacion(endpoint, credentials, payload) {
@@ -4572,6 +4624,127 @@ app.get("/api/v1/orders", requireApplicationAuth, async (req, res, next) => {
   }
 });
 
+// Solicitud de CFDI para una orden pagada (facturación automática del
+// producto). El receptor viene en el payload; el timbrado reutiliza el motor
+// de CSFacturación (o queda en draft en modo simulación).
+app.post("/api/v1/orders/:orderId/cfdi", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+    if (order.status !== "paid") {
+      return res.status(422).json({ message: "Solo se pueden facturar órdenes pagadas." });
+    }
+    if (order.cfdiId) {
+      return res.status(409).json({ message: "La orden ya tiene un CFDI vinculado.", cfdiId: order.cfdiId });
+    }
+
+    const receptorBody = sanitizePlainObject(req.body.receptor);
+    const receptor = {
+      rfc: sanitizeText(receptorBody.rfc).toUpperCase(),
+      legalName: sanitizeText(receptorBody.legalName || receptorBody.name),
+      taxRegime: sanitizeText(receptorBody.taxRegime),
+      cfdiUse: sanitizeText(receptorBody.cfdiUse) || "G03",
+      fiscalAddress: { postalCode: sanitizeText(receptorBody.postalCode) },
+    };
+
+    const receptorValidation = validateFiscalClient(receptor);
+    if (!receptorValidation.valid) {
+      return res.status(400).json({
+        message: `Datos fiscales del receptor incompletos: ${receptorValidation.missing.join(", ")}.`,
+      });
+    }
+
+    const state = await readBillingSatState();
+
+    if (!state.emitter.rfc || !state.emitter.taxRegime || !state.emitter.postalCode) {
+      return res.status(503).json({ message: "El emisor fiscal del hub no está configurado." });
+    }
+
+    const payload = buildCfdiPayloadForReceptor(
+      {
+        concept: order.concept,
+        amount: order.subtotal,
+        taxRate: IVA_RATE,
+        cfdiUse: receptor.cfdiUse,
+        paymentForm: sanitizeText(req.body.paymentForm) || "03",
+        paymentMethod: "PUE",
+        series: sanitizeText(req.body.series) || "A",
+      },
+      state,
+      receptor
+    );
+
+    const { cfdi } = await stampAndStoreCfdi(state, payload, {
+      clientName: receptor.legalName,
+      orderId: order.id,
+      businessLineId: order.businessLineId,
+    });
+
+    await saveOrder({ ...order, cfdiId: cfdi.id, updatedAt: new Date().toISOString() });
+
+    return res.status(201).json({
+      cfdi: {
+        id: cfdi.id,
+        folio: cfdi.folio,
+        status: cfdi.status,
+        uuid: cfdi.uuid,
+        subtotal: cfdi.subtotal,
+        tax: cfdi.tax,
+        total: cfdi.total,
+        environment: cfdi.environment,
+      },
+      message:
+        cfdi.status === "issued"
+          ? "CFDI timbrado por CSFacturación."
+          : "CFDI preparado en modo simulación (CSFACTURACION_ENABLED desactivado).",
+    });
+  } catch (error) {
+    error.statusCode = error.statusCode || 500;
+    return next(error);
+  }
+});
+
+// Descarga de documentos del CFDI de una orden (xml o pdf en base64).
+app.get("/api/v1/orders/:orderId/cfdi/document/:type", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
+
+    if (!order || !order.cfdiId) {
+      return res.status(404).json({ message: "La orden no tiene CFDI." });
+    }
+
+    const state = await readBillingSatState();
+    const cfdi = safeArray(state.cfdis).find((item) => item.id === order.cfdiId);
+
+    if (!cfdi) {
+      return res.status(404).json({ message: "CFDI no encontrado." });
+    }
+
+    const type = sanitizeText(req.params.type).toLowerCase();
+    const contentByType = {
+      xml: { base64: cfdi.xmlBase64, mime: "application/xml", extension: "xml" },
+      pdf: { base64: cfdi.pdfBase64, mime: "application/pdf", extension: "pdf" },
+    };
+    const document = contentByType[type];
+
+    if (!document) {
+      return res.status(400).json({ message: "Tipo de documento inválido (xml o pdf)." });
+    }
+    if (!document.base64) {
+      return res.status(409).json({ message: "El documento aún no está disponible (CFDI sin timbrar)." });
+    }
+
+    res.setHeader("Content-Type", document.mime);
+    res.setHeader("Content-Disposition", `attachment; filename="cfdi-${cfdi.folio}.${document.extension}"`);
+    return res.send(Buffer.from(document.base64, "base64"));
+  } catch (error) {
+    return next(error);
+  }
+});
+
 // Webhook global de Stripe para el checkout centralizado (verificado con el
 // SDK; la ruta legacy por sistema /api/webhooks/payments/stripe/:systemId
 // sigue funcionando igual que antes).
@@ -5474,45 +5647,31 @@ app.post("/api/admin/billing/sat/issue", async (req, res, next) => {
     }
 
     const payload = buildCfdiPayload(req.body, state, clients);
-    const now = new Date().toISOString();
-    const cfdi = {
-      id: crypto.randomUUID(),
-      clientId: client.id,
-      clientName: client.legalName || client.businessName,
-      folio: `${payload.Comprobante.Serie}-${payload.Comprobante.Folio}`,
-      provider: state.provider.name,
-      environment: state.provider.environment,
-      status: "draft",
-      subtotal: payload.Comprobante.SubTotal,
-      tax: roundMoney(payload.Comprobante.Total - payload.Comprobante.SubTotal),
-      total: payload.Comprobante.Total,
-      uuid: "",
-      xmlBase64: "",
-      pdfBase64: "",
-      qrBase64: "",
-      payload,
-      providerResponse: {},
-      createdAt: now,
-      updatedAt: now,
-    };
+    const orderId = sanitizeText(req.body.orderId);
+    let order = null;
 
-    const credentials = {
-      username: state.provider.username || process.env.CSFACTURACION_USERNAME || process.env.CSFACTURACION_USER,
-      password: process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS,
-    };
+    if (orderId) {
+      order = await findOrder({ id: orderId });
 
-    if (process.env.CSFACTURACION_ENABLED === "true" && credentials.username && credentials.password) {
-      const endpoints = buildCsFacturacionEndpoints(state.provider);
-      const providerResponse = await callCsFacturacion(endpoints.issue, credentials, payload);
-      cfdi.status = "issued";
-      cfdi.uuid = providerResponse?.data?.uuid || providerResponse?.uuid || "";
-      cfdi.xmlBase64 = providerResponse?.data?.xml || "";
-      cfdi.pdfBase64 = providerResponse?.data?.pdf || "";
-      cfdi.qrBase64 = providerResponse?.data?.qr || "";
-      cfdi.providerResponse = providerResponse;
+      if (!order) {
+        return res.status(404).json({ message: "La orden indicada no existe." });
+      }
+      if (order.cfdiId) {
+        return res.status(409).json({ message: "La orden ya tiene un CFDI vinculado." });
+      }
     }
 
-    const updated = await writeBillingSatState({ ...state, cfdis: [cfdi, ...safeArray(state.cfdis)] });
+    const { cfdi, updatedState: updated } = await stampAndStoreCfdi(state, payload, {
+      clientId: client.id,
+      clientName: client.legalName || client.businessName,
+      orderId,
+      businessLineId: order?.businessLineId || "",
+    });
+
+    if (order) {
+      await saveOrder({ ...order, cfdiId: cfdi.id, updatedAt: new Date().toISOString() });
+    }
+
     return res.status(201).json({
       cfdi,
       message: cfdi.status === "issued" ? "CFDI emitido por CSFacturación." : "CFDI preparado en modo simulación. Activa CSFACTURACION_ENABLED para timbrar.",
