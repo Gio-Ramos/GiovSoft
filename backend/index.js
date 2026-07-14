@@ -4596,10 +4596,29 @@ app.post("/api/v1/checkout/sessions", requireApplicationAuth, async (req, res, n
 
 app.get("/api/v1/orders/:orderId", requireApplicationAuth, async (req, res, next) => {
   try {
-    const order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
+    let order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
 
     if (!order) {
       return res.status(404).json({ message: "Orden no encontrada." });
+    }
+
+    // Conciliación: si el webhook de Stripe se perdió, el polling del
+    // producto verifica la sesión directamente y rescata el pago.
+    const stripe = getStripe();
+    if (order.status === "pending" && order.stripeSessionId && stripe) {
+      try {
+        const session = await stripe.checkout.sessions.retrieve(order.stripeSessionId);
+
+        if (session.payment_status === "paid") {
+          console.log(`[conciliación] orden ${order.id} pagada en Stripe sin webhook; actualizando.`);
+          order = await handleOrderPaid(order, req.application, { paymentIntentId: session.payment_intent || "" });
+        } else if (session.status === "expired" && order.status === "pending") {
+          order = { ...order, status: "expired", updatedAt: new Date().toISOString() };
+          await saveOrder(order);
+        }
+      } catch (stripeError) {
+        console.warn(`[conciliación] no se pudo consultar la sesión de la orden ${order.id}:`, stripeError.message);
+      }
     }
 
     return res.json({ order: publicOrder(order) });
