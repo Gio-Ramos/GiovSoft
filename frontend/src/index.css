@@ -13228,3 +13228,68 @@ body:has(.app-shell),
     right: 0.75rem;
   }
 }
+
+/* Líneas de negocio */
+.business-line-chip {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Módulo de ventas */
+.sales-scope-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.sales-scope-chip {
+  padding: 7px 16px; border-radius: 999px; border: 1px solid var(--border-color, #d8dce6);
+  background: transparent; font: inherit; font-size: 0.86rem; font-weight: 600;
+  cursor: pointer; color: inherit; transition: all 0.15s;
+}
+.sales-scope-chip.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.sales-panels-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; margin-bottom: 18px; }
+.sales-panel { padding: 18px; }
+.sales-panel-head { margin-bottom: 12px; }
+.sales-panel-head h3 { margin: 0; font-size: 1rem; }
+.sales-chart { min-height: 180px; }
+.sales-breakdown { display: flex; flex-direction: column; gap: 10px; }
+.sales-breakdown-row {
+  display: grid; grid-template-columns: minmax(120px, auto) 1fr auto auto;
+  gap: 12px; align-items: center; padding: 8px 10px; border-radius: 10px;
+  border: none; background: transparent; font: inherit; text-align: left; cursor: pointer;
+}
+.sales-breakdown-row:hover { background: rgba(29, 78, 216, 0.06); }
+.sales-breakdown-bar { height: 8px; border-radius: 999px; background: rgba(0,0,0,0.07); overflow: hidden; }
+.sales-breakdown-bar i { display: block; height: 100%; border-radius: 999px; }
+.sales-total-caption { margin-left: auto; font-size: 0.85rem; opacity: 0.7; }
+.sales-order-row { cursor: pointer; }
+.sales-empty { opacity: 0.6; font-size: 0.9rem; }
+.sales-drawer-backdrop { position: fixed; inset: 0; background: rgba(15, 18, 26, 0.45); z-index: 60; display: flex; justify-content: flex-end; }
+.sales-drawer { width: min(460px, 92vw); height: 100%; background: var(--surface-color, #fff); box-shadow: -18px 0 40px rgba(0,0,0,0.18); display: flex; flex-direction: column; }
+.sales-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid rgba(0,0,0,0.08); }
+.sales-drawer-head h3 { margin: 0 0 2px; font-size: 1.05rem; }
+.sales-drawer-head small { opacity: 0.6; font-size: 0.75rem; }
+.sales-drawer-body { padding: 18px 22px 40px; overflow-y: auto; }
+.sales-drawer-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.sales-drawer-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 0 0 22px; }
+.sales-drawer-facts div { display: flex; flex-direction: column; gap: 2px; }
+.sales-drawer-facts dt { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.6px; opacity: 0.6; }
+.sales-drawer-facts dd { margin: 0; font-size: 0.92rem; word-break: break-all; }
+.sales-drawer-subtitle { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 0.9rem; }
+.sales-deliveries { display: flex; flex-direction: column; gap: 10px; }
+.sales-delivery-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; }
+.sales-delivery-row small { display: block; opacity: 0.65; font-size: 0.76rem; word-break: break-all; }
+.sales-delivery-error { color: #dc2626; }
+.sales-delivery-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; white-space: nowrap; }
+@media (max-width: 980px) { .sales-panels-grid { grid-template-columns: 1fr; } }
+
+/* Órdenes sin factura (Facturación) */
+.sat-uninvoiced-panel { margin: 14px 0 18px; padding: 14px 16px; border: 1px dashed rgba(29, 78, 216, 0.35); border-radius: 14px; }
+.sat-uninvoiced-panel h4 { margin: 0 0 10px; font-size: 0.92rem; }
+.sat-uninvoiced-list { display: flex; flex-direction: column; gap: 8px; }
+.sat-uninvoiced-row { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center; padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,0.03); }
+.sat-uninvoiced-row.is-selected { outline: 2px solid rgba(29, 78, 216, 0.5); }
+.sat-uninvoiced-row small { display: block; opacity: 0.65; font-size: 0.76rem; }
+.sat-uninvoiced-row button { border: 1px solid rgba(29, 78, 216, 0.5); background: transparent; color: inherit; border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.sat-uninvoiced-row button:hover { background: rgba(29, 78, 216, 0.1); }
+.sat-uninvoiced-note { margin: 10px 0 0; font-size: 0.82rem; opacity: 0.75; }

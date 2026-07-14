@@ -375,6 +375,16 @@ function statusLabel(status: string) {
   return labels[status] || status || "Pendiente";
 }
 
+interface UninvoicedOrder {
+  id: string;
+  concept: string;
+  plan: string;
+  subtotal: number;
+  amount: number;
+  externalRef: string;
+  paidAt: string;
+}
+
 export default function AdminBilling() {
   const [state, setState] = useState<BillingSatState>(emptyState);
   const [paymentState, setPaymentState] = useState<PaymentEngineState>(emptyPaymentState);
@@ -405,10 +415,12 @@ export default function AdminBilling() {
   });
   const [validationClientId, setValidationClientId] = useState("");
   const [validationResult, setValidationResult] = useState("");
+  const [uninvoicedOrders, setUninvoicedOrders] = useState<UninvoicedOrder[]>([]);
   const [cfdiForm, setCfdiForm] = useState({
     amount: "",
     cfdiUse: "G03",
     clientId: "",
+    orderId: "",
     concept: "",
     folio: "",
     paymentForm: "03",
@@ -450,6 +462,13 @@ export default function AdminBilling() {
 
   useEffect(() => {
     void loadSatState();
+  }, []);
+
+  useEffect(() => {
+    api
+      .get("/api/admin/orders", { params: { status: "paid", uninvoiced: "1", limit: 20 } })
+      .then((response) => setUninvoicedOrders(response.data.orders || []))
+      .catch(() => setUninvoicedOrders([]));
   }, []);
 
   function applyState(responseData: BillingSatState & { message?: string }) {
@@ -608,7 +627,10 @@ export default function AdminBilling() {
         quantity: Number(cfdiForm.quantity || 1),
       });
       applyState(response.data);
-      setCfdiForm((current) => ({ ...current, amount: "", concept: "", folio: "" }));
+      if (cfdiForm.orderId) {
+        setUninvoicedOrders((current) => current.filter((order) => order.id !== cfdiForm.orderId));
+      }
+      setCfdiForm((current) => ({ ...current, amount: "", concept: "", folio: "", orderId: "" }));
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message || "No se pudo emitir/preparar el CFDI.");
     }
@@ -993,6 +1015,36 @@ ${paymentState.connectedSystems[0] ? stripeWebhookUrl(paymentState.connectedSyst
               </div>
               <span className={`billing-status is-${canIssue ? "valid" : "pending"}`}>{canIssue ? "Listo para emitir" : "Configuración pendiente"}</span>
             </section>
+            {uninvoicedOrders.length > 0 && (
+              <section className="sat-uninvoiced-panel">
+                <h4>Órdenes pagadas sin factura ({uninvoicedOrders.length})</h4>
+                <div className="sat-uninvoiced-list">
+                  {uninvoicedOrders.map((order) => (
+                    <div className={`sat-uninvoiced-row ${cfdiForm.orderId === order.id ? "is-selected" : ""}`} key={order.id}>
+                      <div>
+                        <strong>{order.concept}</strong>
+                        <small>{order.externalRef} · pagada {order.paidAt ? new Date(order.paidAt).toLocaleDateString("es-MX") : ""}</small>
+                      </div>
+                      <span>{new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(order.amount)}</span>
+                      <button
+                        onClick={() =>
+                          setCfdiForm((current) => ({
+                            ...current,
+                            orderId: order.id,
+                            concept: order.concept,
+                            amount: String(order.subtotal),
+                          }))
+                        }
+                        type="button"
+                      >
+                        Facturar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {cfdiForm.orderId && <p className="sat-uninvoiced-note">Se vinculará el CFDI a la orden seleccionada. Elige el cliente fiscal y emite.</p>}
+              </section>
+            )}
             <form className="billing-entry-form sat-cfdi-form" onSubmit={issueCfdi}>
               <label><span>Cliente <b>*</b></span><select onChange={(event) => setCfdiForm((current) => ({ ...current, clientId: event.target.value }))} value={cfdiForm.clientId}><option value="">Seleccionar cliente</option>{state.clients.map((client) => <option key={client.id} value={client.id}>{client.legalName || client.businessName}</option>)}</select></label>
               <label><span>Serie</span><select onChange={(event) => setCfdiForm((current) => ({ ...current, series: event.target.value }))} value={cfdiForm.series}>{state.series.length ? state.series.map((serie) => <option key={serie.id} value={serie.serie}>{serie.serie} · {serie.company}</option>) : <option>A</option>}</select></label>

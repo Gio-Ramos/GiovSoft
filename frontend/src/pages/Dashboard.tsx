@@ -37,10 +37,23 @@ interface ContactRequest {
   createdAt: string;
 }
 
+interface RevenueSummary {
+  kpis: {
+    revenueTotal: number;
+    revenueThisMonth: number;
+    paidOrders: number;
+    avgTicket: number;
+    pendingOrders: number;
+    refundedAmount: number;
+  };
+  monthlyRevenue: { month: string; revenue: number; orders: number }[];
+}
+
 interface DashboardSummary {
   stats: DashboardStat[];
   recentRequests: ContactRequest[];
   priorities: string[];
+  revenue?: RevenueSummary;
 }
 
 const fallbackSummary: DashboardSummary = {
@@ -57,14 +70,7 @@ const fallbackSummary: DashboardSummary = {
   ],
 };
 
-const revenueTrend = [
-  { month: "Ene", value: 0 },
-  { month: "Feb", value: 0 },
-  { month: "Mar", value: 0 },
-  { month: "Abr", value: 0 },
-  { month: "May", value: 0 },
-  { month: "Jun", value: 0 },
-];
+const monthShortNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 const activityItems: { id: string; title: string; detail: string; time: string; tone: string }[] = [];
 
@@ -86,6 +92,15 @@ function formatDate(value: string) {
 export default function Dashboard() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary>(fallbackSummary);
+
+  const revenueSeries = summary.revenue?.monthlyRevenue || [];
+  const maxRevenue = Math.max(...revenueSeries.map((item) => item.revenue), 1);
+  const revenueTrend = revenueSeries.length > 0
+    ? revenueSeries.map((item) => ({
+        month: monthShortNames[Number(item.month.slice(5, 7)) - 1] || item.month,
+        value: Math.round((item.revenue / maxRevenue) * 100),
+      }))
+    : monthShortNames.slice(0, 6).map((month) => ({ month, value: 0 }));
 
   useEffect(() => {
     let isMounted = true;
@@ -114,7 +129,13 @@ export default function Dashboard() {
 
   const mainStats = [
     { label: "Clientes activos", value: "0", change: "Sin registros", icon: UsersRound, tone: "is-blue" },
-    { label: "Ingresos (MXN)", value: "$0", change: "Sin facturación", icon: WalletCards, tone: "is-green" },
+    {
+      label: "Ingresos (MXN)",
+      value: new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(summary.revenue?.kpis.revenueTotal || 0),
+      change: summary.revenue ? `${summary.revenue.kpis.paidOrders} órdenes pagadas` : "Sin facturación",
+      icon: WalletCards,
+      tone: "is-green",
+    },
     { label: "Facturas emitidas", value: "0", change: "Sin facturas", icon: FileText, tone: "is-purple" },
     { label: "Leads activos", value: leadStats.active, change: `${leadStats.today} hoy · ${leadStats.week} últimos 7 días`, icon: ClipboardList, tone: "is-orange" },
   ];
@@ -162,7 +183,7 @@ export default function Dashboard() {
           </header>
           <div className="dashboard-chart">
             {revenueTrend.map((item) => (
-              <span key={item.month} style={{ "--bar-height": `${item.value / 1.45}%` } as CSSProperties}>
+              <span key={item.month} style={{ "--bar-height": `${item.value}%` } as CSSProperties}>
                 <i />
                 <small>{item.month}</small>
               </span>

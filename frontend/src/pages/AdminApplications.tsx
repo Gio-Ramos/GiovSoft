@@ -18,14 +18,25 @@ import { api } from "../lib/api";
 
 type ApplicationStatus = "active" | "pending" | "paused" | "error";
 
+interface BusinessLine {
+  id: string;
+  slug: string;
+  name: string;
+  color: string;
+  status: string;
+}
+
 interface ConnectedApplication {
   id: string;
   name: string;
   domain: string;
   apiBaseUrl: string;
+  businessLineId: string;
   status: ApplicationStatus;
   ssoEnabled: boolean;
   webhookSecret: string;
+  apiKey: string;
+  outboundWebhookUrl: string;
   loginRedirectUrl: string;
   lastSync: string;
   config?: Record<string, boolean | string>;
@@ -45,6 +56,8 @@ interface ApplicationForm {
   name: string;
   domain: string;
   apiBaseUrl: string;
+  businessLineId: string;
+  outboundWebhookUrl: string;
   loginRedirectUrl: string;
   status: ApplicationStatus;
   ssoEnabled: boolean;
@@ -56,6 +69,8 @@ interface ApplicationForm {
 
 const emptyForm: ApplicationForm = {
   apiBaseUrl: "",
+  businessLineId: "",
+  outboundWebhookUrl: "",
   domain: "",
   loginRedirectUrl: "",
   name: "",
@@ -94,6 +109,7 @@ function webhookUrl(applicationId: string) {
 
 export default function AdminApplications() {
   const [applications, setApplications] = useState<ConnectedApplication[]>([]);
+  const [businessLines, setBusinessLines] = useState<BusinessLine[]>([]);
   const [form, setForm] = useState<ApplicationForm>(emptyForm);
   const [editingId, setEditingId] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -112,8 +128,12 @@ export default function AdminApplications() {
     setMessage("");
 
     try {
-      const response = await api.get("/api/admin/applications");
+      const [response, linesResponse] = await Promise.all([
+        api.get("/api/admin/applications"),
+        api.get("/api/admin/business-lines"),
+      ]);
       setApplications(response.data.applications || []);
+      setBusinessLines(linesResponse.data.businessLines || []);
     } catch (error: any) {
       setMessage(error?.response?.data?.message || "No se pudieron cargar las aplicaciones.");
     } finally {
@@ -145,6 +165,8 @@ export default function AdminApplications() {
     setEditingId(application.id);
     setForm({
       apiBaseUrl: application.apiBaseUrl,
+      businessLineId: application.businessLineId || "",
+      outboundWebhookUrl: application.outboundWebhookUrl || "",
       domain: application.domain,
       loginRedirectUrl: application.loginRedirectUrl,
       name: application.name,
@@ -167,6 +189,8 @@ export default function AdminApplications() {
     try {
       const payload = {
         apiBaseUrl: form.apiBaseUrl,
+        businessLineId: form.businessLineId,
+        outboundWebhookUrl: form.outboundWebhookUrl,
         config: {
           syncInvoices: form.syncInvoices,
           syncPayments: form.syncPayments,
@@ -209,6 +233,19 @@ export default function AdminApplications() {
       setMessage(response.data.message || "Aplicación actualizada.");
     } catch (error: any) {
       setMessage(error?.response?.data?.message || "No se pudo actualizar la aplicación.");
+    }
+  }
+
+  async function regenerateApiKey(application: ConnectedApplication) {
+    setOpenMenu("");
+    try {
+      const response = await api.post(`/api/admin/applications/${application.id}/api-key`);
+      const apiKey = response.data.apiKey as string;
+      setApplications((current) => current.map((item) => (item.id === application.id ? { ...item, apiKey } : item)));
+      await navigator.clipboard.writeText(apiKey);
+      setMessage("API key regenerada y copiada al portapapeles.");
+    } catch (error: any) {
+      setMessage(error?.response?.data?.message || "No se pudo regenerar la API key.");
     }
   }
 
@@ -262,7 +299,9 @@ export default function AdminApplications() {
           <form className="applications-entry-form" onSubmit={saveApplication}>
             <label><span>Nombre <b>*</b></span><input onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ej. GiovSoft Commerce" value={form.name} /></label>
             <label><span>Dominio</span><input onChange={(event) => setForm((current) => ({ ...current, domain: event.target.value }))} placeholder="commerce.giovsoft.com" value={form.domain} /></label>
+            <label><span>Línea de negocio</span><select onChange={(event) => setForm((current) => ({ ...current, businessLineId: event.target.value }))} value={form.businessLineId}><option value="">Sin asignar</option>{businessLines.filter((line) => line.status === "active").map((line) => <option key={line.id} value={line.id}>{line.name}</option>)}</select></label>
             <label><span>API Base URL <b>*</b></span><input onChange={(event) => setForm((current) => ({ ...current, apiBaseUrl: event.target.value }))} placeholder="https://api.sistema.com" value={form.apiBaseUrl} /></label>
+            <label><span>Webhook saliente (pagos)</span><input onChange={(event) => setForm((current) => ({ ...current, outboundWebhookUrl: event.target.value }))} placeholder="https://api.sistema.com/api/payments/hub-webhook" value={form.outboundWebhookUrl} /></label>
             <label><span>URL retorno SSO</span><input onChange={(event) => setForm((current) => ({ ...current, loginRedirectUrl: event.target.value }))} placeholder="https://sistema.com/auth/giovsoft/callback" value={form.loginRedirectUrl} /></label>
             <label><span>Estado</span><select onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as ApplicationStatus }))} value={form.status}>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="billing-entry-check"><input checked={form.ssoEnabled} onChange={(event) => setForm((current) => ({ ...current, ssoEnabled: event.target.checked }))} type="checkbox" /><span>Login centralizado activo</span></label>
@@ -279,11 +318,17 @@ export default function AdminApplications() {
 
         <div className="clients-table-wrap">
           <table className="billing-data-table applications-data-table">
-            <thead><tr><th>Aplicación</th><th>API</th><th>SSO</th><th>Ventas</th><th>Facturas</th><th>Usuarios</th><th>Último webhook</th><th>Estado</th><th>Conexión</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Aplicación</th><th>Línea</th><th>API</th><th>SSO</th><th>Ventas</th><th>Facturas</th><th>Usuarios</th><th>Último webhook</th><th>Estado</th><th>Conexión</th><th>Acciones</th></tr></thead>
             <tbody>
               {applications.map((application) => (
                 <tr key={application.id}>
                   <td><strong>{application.name}</strong><small>{application.domain || "Sin dominio"}</small></td>
+                  <td>{(() => {
+                    const line = businessLines.find((item) => item.id === application.businessLineId);
+                    return line
+                      ? <span className="business-line-chip" style={{ backgroundColor: `${line.color}22`, color: line.color }}>{line.name}</span>
+                      : <small>Sin línea</small>;
+                  })()}</td>
                   <td>{application.apiBaseUrl}</td>
                   <td>{application.ssoEnabled ? "Centralizado" : "Desactivado"}</td>
                   <td><strong>{money(application.metrics?.revenue || 0)}</strong></td>
@@ -295,6 +340,7 @@ export default function AdminApplications() {
                     <div className="application-connection-box">
                       <button onClick={() => copyText(webhookUrl(application.id))} type="button"><Copy size={14} /> Webhook</button>
                       <button onClick={() => copyText(application.webhookSecret)} type="button"><KeyRound size={14} /> Secreto</button>
+                      <button onClick={() => copyText(application.apiKey)} type="button"><KeyRound size={14} /> API key</button>
                     </div>
                   </td>
                   <td>
@@ -304,13 +350,14 @@ export default function AdminApplications() {
                       <button onClick={() => updateStatus(application, "active")} type="button"><CheckCircle2 size={15} /> Activar</button>
                       <button onClick={() => updateStatus(application, "paused")} type="button">Pausar</button>
                       <button onClick={() => updateStatus(application, "error")} type="button">Marcar revisión</button>
+                      <button onClick={() => regenerateApiKey(application)} type="button">Regenerar API key</button>
                     </div>
                   </td>
                 </tr>
               ))}
               {!loading && applications.length === 0 && (
                 <tr>
-                  <td className="quotes-empty-row" colSpan={10}>No hay aplicaciones conectadas todavía.</td>
+                  <td className="quotes-empty-row" colSpan={11}>No hay aplicaciones conectadas todavía.</td>
                 </tr>
               )}
             </tbody>

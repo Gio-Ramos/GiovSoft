@@ -28,6 +28,9 @@ const quotesFile = path.join(dataDir, "quotes.json");
 const billingSatFile = path.join(dataDir, "billing-sat.json");
 const paymentEngineFile = path.join(dataDir, "payment-engine.json");
 const applicationsFile = path.join(dataDir, "connected-applications.json");
+const businessLinesFile = path.join(dataDir, "business-lines.json");
+const ordersFile = path.join(dataDir, "orders.json");
+const outboundDeliveriesFile = path.join(dataDir, "outbound-webhook-deliveries.json");
 const assetsDir = path.join(__dirname, "assets");
 const logoPath = path.join(assetsDir, "logo-white.svg");
 const quoteLogoPath = path.join(assetsDir, "logo-black.svg");
@@ -64,6 +67,66 @@ const dataStore = postgresConfigured ? "PostgreSQL" : "JSON local";
 let pool;
 let databaseReady = false;
 const twoFactorChallenges = new Map();
+const IVA_RATE = 0.16;
+const orderStatuses = new Set(["draft", "pending", "paid", "failed", "expired", "refunded"]);
+// Reintentos de webhooks salientes: 5 intentos con backoff creciente.
+const outboundRetryDelaysMs = [30 * 1000, 2 * 60 * 1000, 10 * 60 * 1000, 30 * 60 * 1000, 2 * 60 * 60 * 1000];
+const outboundTimeoutMs = 10 * 1000;
+
+// Cliente Stripe perezoso: sin STRIPE_SECRET_KEY el checkout opera en modo
+// simulación (mismo patrón que CSFACTURACION_ENABLED para CFDI).
+let stripeClient = null;
+function getStripe() {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return null;
+  }
+  if (!stripeClient) {
+    const Stripe = require("stripe");
+    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+  }
+  return stripeClient;
+}
+
+// Líneas de negocio de GiovSoft. UUIDs fijos para que despliegues en JSON y
+// PostgreSQL produzcan los mismos ids (las aplicaciones referencian estos ids).
+const defaultBusinessLines = [
+  {
+    id: "7c9e6b1a-4f2d-4a8e-9c3b-1e5a7d2f8b4c",
+    slug: "gesove",
+    name: "Gesove",
+    description: "Invitaciones digitales para eventos (gesove.com).",
+    color: "#B08D57",
+    icon: "Mail",
+    status: "active",
+  },
+  {
+    id: "3a8f2c5d-9b1e-4d7a-8f6c-2b4e9a1d5c7e",
+    slug: "academy",
+    name: "GiovSoft Academy",
+    description: "Cursos de tecnología, membresías y certificaciones.",
+    color: "#4F46E5",
+    icon: "GraduationCap",
+    status: "active",
+  },
+  {
+    id: "5e2b8d4f-1c7a-4e9b-a3d8-6f4c2e8b9a1d",
+    slug: "servicios-web",
+    name: "Servicios Web GiovSoft",
+    description: "Desarrollo web, ecommerce, dominios, correos y hosting.",
+    color: "#0891B2",
+    icon: "Globe",
+    status: "active",
+  },
+  {
+    id: "9d4a7e2c-6b8f-4c1d-b5e9-3a7f1c5d8e2b",
+    slug: "clinic",
+    name: "GiovSoft Clinic",
+    description: "Soluciones para clínicas y consultorios.",
+    color: "#059669",
+    icon: "Stethoscope",
+    status: "active",
+  },
+];
 
 const serviceDetails = {
   "GiovSoft 360": {
@@ -1642,6 +1705,76 @@ async function ensureDatabase() {
       updated_by UUID REFERENCES admin_users (id) ON DELETE SET NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS business_lines (
+      id UUID PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT,
+      icon TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    ALTER TABLE connected_applications ADD COLUMN IF NOT EXISTS business_line_id UUID;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS business_line_id UUID;
+    ALTER TABLE connected_applications ADD COLUMN IF NOT EXISTS api_key TEXT;
+    ALTER TABLE connected_applications ADD COLUMN IF NOT EXISTS outbound_webhook_url TEXT;
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id UUID PRIMARY KEY,
+      application_id UUID REFERENCES connected_applications (id) ON DELETE SET NULL,
+      business_line_id UUID REFERENCES business_lines (id) ON DELETE SET NULL,
+      sku TEXT,
+      plan TEXT,
+      concept TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      subtotal NUMERIC(12,2) NOT NULL,
+      tax NUMERIC(12,2) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'MXN',
+      status TEXT NOT NULL DEFAULT 'pending',
+      stripe_session_id TEXT,
+      stripe_payment_intent_id TEXT,
+      external_ref TEXT,
+      idempotency_key TEXT,
+      customer JSONB NOT NULL DEFAULT '{}'::jsonb,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      cfdi_id TEXT,
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_app_idempotency
+      ON orders (application_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_orders_stripe_session ON orders (stripe_session_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_line_created ON orders (business_line_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
+    CREATE INDEX IF NOT EXISTS idx_orders_external_ref ON orders (external_ref);
+
+    CREATE TABLE IF NOT EXISTS outbound_webhook_deliveries (
+      id UUID PRIMARY KEY,
+      application_id UUID REFERENCES connected_applications (id) ON DELETE CASCADE,
+      order_id UUID,
+      event_type TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      target_url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INT NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ,
+      last_status_code INT,
+      last_error TEXT,
+      delivered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_outbound_deliveries_pending
+      ON outbound_webhook_deliveries (status, next_attempt_at);
+    CREATE INDEX IF NOT EXISTS idx_outbound_deliveries_order
+      ON outbound_webhook_deliveries (order_id);
   `);
 
   databaseReady = true;
@@ -1748,12 +1881,74 @@ function mapQuoteRow(row) {
   };
 }
 
+function mapBusinessLineRow(row) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description || "",
+    color: row.color || "",
+    icon: row.icon || "",
+    status: row.status || "active",
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
+function mapOrderRow(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id || "",
+    businessLineId: row.business_line_id || "",
+    sku: row.sku || "",
+    plan: row.plan || "",
+    concept: row.concept,
+    amount: Number(row.amount || 0),
+    subtotal: Number(row.subtotal || 0),
+    tax: Number(row.tax || 0),
+    currency: row.currency || "MXN",
+    status: row.status || "pending",
+    stripeSessionId: row.stripe_session_id || "",
+    stripePaymentIntentId: row.stripe_payment_intent_id || "",
+    externalRef: row.external_ref || "",
+    idempotencyKey: row.idempotency_key || "",
+    customer: sanitizePlainObject(row.customer),
+    metadata: sanitizePlainObject(row.metadata),
+    cfdiId: row.cfdi_id || "",
+    paidAt: toIsoDate(row.paid_at),
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
+function mapDeliveryRow(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id || "",
+    orderId: row.order_id || "",
+    eventType: row.event_type,
+    payload: sanitizePlainObject(row.payload),
+    targetUrl: row.target_url,
+    status: row.status || "pending",
+    attempts: Number(row.attempts || 0),
+    nextAttemptAt: toIsoDate(row.next_attempt_at),
+    lastStatusCode: row.last_status_code === null || row.last_status_code === undefined ? null : Number(row.last_status_code),
+    lastError: row.last_error || "",
+    deliveredAt: toIsoDate(row.delivered_at),
+    createdAt: toIsoDate(row.created_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
 function mapApplicationRow(row, metrics = {}) {
   return {
     id: row.id,
     name: row.name,
     domain: row.domain || "",
     apiBaseUrl: row.api_base_url || "",
+    businessLineId: row.business_line_id || "",
+    apiKey: row.api_key || "",
+    outboundWebhookUrl: row.outbound_webhook_url || "",
     status: row.status || "pending",
     ssoEnabled: Boolean(row.sso_enabled),
     webhookSecret: row.webhook_secret || "",
@@ -1908,6 +2103,38 @@ async function ensureApplicationsFile() {
     await fs.access(applicationsFile);
   } catch {
     await fs.writeFile(applicationsFile, "[]", "utf8");
+  }
+}
+
+async function ensureBusinessLinesFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(businessLinesFile);
+  } catch {
+    const now = new Date().toISOString();
+    const seeded = defaultBusinessLines.map((line) => ({ ...line, createdAt: now, updatedAt: now }));
+    await fs.writeFile(businessLinesFile, JSON.stringify(seeded, null, 2), "utf8");
+  }
+}
+
+async function ensureOrdersFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(ordersFile);
+  } catch {
+    await fs.writeFile(ordersFile, "[]", "utf8");
+  }
+}
+
+async function ensureOutboundDeliveriesFile() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    await fs.access(outboundDeliveriesFile);
+  } catch {
+    await fs.writeFile(outboundDeliveriesFile, "[]", "utf8");
   }
 }
 
@@ -2458,8 +2685,8 @@ function validateFiscalClient(client) {
   };
 }
 
-function buildCfdiPayload(body, state, clients) {
-  const client = clients.find((item) => item.id === body.clientId) || {};
+function buildCfdiPayloadForReceptor(body, state, receptor) {
+  const client = receptor || {};
   const fiscalAddress = sanitizePlainObject(client.fiscalAddress);
   const concept = sanitizeText(body.concept);
   const amount = roundMoney(body.amount);
@@ -2505,6 +2732,58 @@ function buildCfdiPayload(body, state, clients) {
       },
     ],
   };
+}
+
+function buildCfdiPayload(body, state, clients) {
+  const client = clients.find((item) => item.id === body.clientId) || {};
+  return buildCfdiPayloadForReceptor(body, state, client);
+}
+
+// Timbra (si CSFacturación está habilitado) y guarda el CFDI en el estado de
+// facturación. Compartido por la emisión admin y la API de productos.
+async function stampAndStoreCfdi(state, payload, meta = {}) {
+  const now = new Date().toISOString();
+  const cfdi = {
+    id: crypto.randomUUID(),
+    clientId: meta.clientId || "",
+    clientName: meta.clientName || payload.Receptor.Nombre || "",
+    orderId: meta.orderId || "",
+    businessLineId: meta.businessLineId || "",
+    folio: `${payload.Comprobante.Serie}-${payload.Comprobante.Folio}`,
+    provider: state.provider.name,
+    environment: state.provider.environment,
+    status: "draft",
+    subtotal: payload.Comprobante.SubTotal,
+    tax: roundMoney(payload.Comprobante.Total - payload.Comprobante.SubTotal),
+    total: payload.Comprobante.Total,
+    uuid: "",
+    xmlBase64: "",
+    pdfBase64: "",
+    qrBase64: "",
+    payload,
+    providerResponse: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const credentials = {
+    username: state.provider.username || process.env.CSFACTURACION_USERNAME || process.env.CSFACTURACION_USER,
+    password: process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS,
+  };
+
+  if (process.env.CSFACTURACION_ENABLED === "true" && credentials.username && credentials.password) {
+    const endpoints = buildCsFacturacionEndpoints(state.provider);
+    const providerResponse = await callCsFacturacion(endpoints.issue, credentials, payload);
+    cfdi.status = "issued";
+    cfdi.uuid = providerResponse?.data?.uuid || providerResponse?.uuid || "";
+    cfdi.xmlBase64 = providerResponse?.data?.xml || "";
+    cfdi.pdfBase64 = providerResponse?.data?.pdf || "";
+    cfdi.qrBase64 = providerResponse?.data?.qr || "";
+    cfdi.providerResponse = providerResponse;
+  }
+
+  const updatedState = await writeBillingSatState({ ...state, cfdis: [cfdi, ...safeArray(state.cfdis)] });
+  return { cfdi, updatedState };
 }
 
 async function callCsFacturacion(endpoint, credentials, payload) {
@@ -2582,9 +2861,10 @@ async function writeApplications(applications) {
           `
             INSERT INTO connected_applications (
               id, name, domain, api_base_url, status, sso_enabled, webhook_secret,
-              login_redirect_url, last_sync, config, created_at, updated_at
+              login_redirect_url, last_sync, config, business_line_id, api_key,
+              outbound_webhook_url, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15)
             ON CONFLICT (id) DO UPDATE SET
               name = EXCLUDED.name,
               domain = EXCLUDED.domain,
@@ -2595,6 +2875,9 @@ async function writeApplications(applications) {
               login_redirect_url = EXCLUDED.login_redirect_url,
               last_sync = EXCLUDED.last_sync,
               config = EXCLUDED.config,
+              business_line_id = EXCLUDED.business_line_id,
+              api_key = EXCLUDED.api_key,
+              outbound_webhook_url = EXCLUDED.outbound_webhook_url,
               created_at = EXCLUDED.created_at,
               updated_at = EXCLUDED.updated_at
           `,
@@ -2609,6 +2892,9 @@ async function writeApplications(applications) {
             application.loginRedirectUrl || null,
             application.lastSync || null,
             JSON.stringify(sanitizePlainObject(application.config)),
+            application.businessLineId || null,
+            application.apiKey || null,
+            application.outboundWebhookUrl || null,
             application.createdAt || new Date().toISOString(),
             application.updatedAt || new Date().toISOString(),
           ]
@@ -2629,6 +2915,549 @@ async function writeApplications(applications) {
   await ensureApplicationsFile();
   await fs.writeFile(applicationsFile, JSON.stringify(applications, null, 2), "utf8");
 }
+
+async function readBusinessLines() {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+
+    const { rows } = await currentPool.query("SELECT * FROM business_lines ORDER BY created_at ASC");
+
+    if (rows.length === 0) {
+      // Primera ejecución: sembrar el catálogo con UUIDs fijos.
+      const now = new Date().toISOString();
+      const seeded = defaultBusinessLines.map((line) => ({ ...line, createdAt: now, updatedAt: now }));
+      await writeBusinessLines(seeded);
+      return seeded;
+    }
+
+    return rows.map(mapBusinessLineRow);
+  }
+
+  await ensureBusinessLinesFile();
+  const raw = await fs.readFile(businessLinesFile, "utf8");
+  return JSON.parse(raw);
+}
+
+async function writeBusinessLines(businessLines) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const client = await currentPool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      for (const line of businessLines) {
+        await client.query(
+          `
+            INSERT INTO business_lines (id, slug, name, description, color, icon, status, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO UPDATE SET
+              slug = EXCLUDED.slug,
+              name = EXCLUDED.name,
+              description = EXCLUDED.description,
+              color = EXCLUDED.color,
+              icon = EXCLUDED.icon,
+              status = EXCLUDED.status,
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            line.id,
+            line.slug,
+            line.name,
+            line.description || null,
+            line.color || null,
+            line.icon || null,
+            line.status || "active",
+            line.createdAt || new Date().toISOString(),
+            line.updatedAt || new Date().toISOString(),
+          ]
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return;
+  }
+
+  await ensureBusinessLinesFile();
+  await fs.writeFile(businessLinesFile, JSON.stringify(businessLines, null, 2), "utf8");
+}
+
+async function readOrdersFileList() {
+  await ensureOrdersFile();
+  const raw = await fs.readFile(ordersFile, "utf8");
+  return JSON.parse(raw);
+}
+
+async function saveOrder(order) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    await currentPool.query(
+      `
+        INSERT INTO orders (
+          id, application_id, business_line_id, sku, plan, concept, amount, subtotal, tax,
+          currency, status, stripe_session_id, stripe_payment_intent_id, external_ref,
+          idempotency_key, customer, metadata, cfdi_id, paid_at, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19, $20, $21)
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          stripe_session_id = EXCLUDED.stripe_session_id,
+          stripe_payment_intent_id = EXCLUDED.stripe_payment_intent_id,
+          customer = EXCLUDED.customer,
+          metadata = EXCLUDED.metadata,
+          cfdi_id = EXCLUDED.cfdi_id,
+          paid_at = EXCLUDED.paid_at,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        order.id,
+        order.applicationId || null,
+        order.businessLineId || null,
+        order.sku || null,
+        order.plan || null,
+        order.concept,
+        order.amount,
+        order.subtotal,
+        order.tax,
+        order.currency || "MXN",
+        order.status || "pending",
+        order.stripeSessionId || null,
+        order.stripePaymentIntentId || null,
+        order.externalRef || null,
+        order.idempotencyKey || null,
+        JSON.stringify(sanitizePlainObject(order.customer)),
+        JSON.stringify(sanitizePlainObject(order.metadata)),
+        order.cfdiId || null,
+        order.paidAt || null,
+        order.createdAt || new Date().toISOString(),
+        order.updatedAt || new Date().toISOString(),
+      ]
+    );
+    return;
+  }
+
+  const orders = await readOrdersFileList();
+  const orderIndex = orders.findIndex((item) => item.id === order.id);
+
+  if (orderIndex === -1) {
+    orders.unshift(order);
+  } else {
+    orders[orderIndex] = order;
+  }
+
+  await fs.writeFile(ordersFile, JSON.stringify(orders, null, 2), "utf8");
+}
+
+async function findOrder(criteria) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const conditions = [];
+    const values = [];
+
+    if (criteria.id) {
+      values.push(criteria.id);
+      conditions.push(`id = $${values.length}`);
+    }
+    if (criteria.stripeSessionId) {
+      values.push(criteria.stripeSessionId);
+      conditions.push(`stripe_session_id = $${values.length}`);
+    }
+    if (criteria.applicationId) {
+      values.push(criteria.applicationId);
+      conditions.push(`application_id = $${values.length}`);
+    }
+    if (criteria.idempotencyKey) {
+      values.push(criteria.idempotencyKey);
+      conditions.push(`idempotency_key = $${values.length}`);
+    }
+
+    if (conditions.length === 0) {
+      return null;
+    }
+
+    const { rows } = await currentPool.query(
+      `SELECT * FROM orders WHERE ${conditions.join(" AND ")} LIMIT 1`,
+      values
+    );
+    return rows[0] ? mapOrderRow(rows[0]) : null;
+  }
+
+  const orders = await readOrdersFileList();
+  return (
+    orders.find(
+      (order) =>
+        (!criteria.id || order.id === criteria.id) &&
+        (!criteria.stripeSessionId || order.stripeSessionId === criteria.stripeSessionId) &&
+        (!criteria.applicationId || order.applicationId === criteria.applicationId) &&
+        (!criteria.idempotencyKey || order.idempotencyKey === criteria.idempotencyKey)
+    ) || null
+  );
+}
+
+async function listOrders(filters = {}) {
+  const limit = Math.min(Number(filters.limit) || 50, 200);
+  const offset = Math.max(Number(filters.offset) || 0, 0);
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const conditions = [];
+    const values = [];
+
+    if (filters.applicationId) {
+      values.push(filters.applicationId);
+      conditions.push(`application_id = $${values.length}`);
+    }
+    if (filters.businessLineId) {
+      values.push(filters.businessLineId);
+      conditions.push(`business_line_id = $${values.length}`);
+    }
+    if (filters.status) {
+      values.push(filters.status);
+      conditions.push(`status = $${values.length}`);
+    }
+    if (filters.externalRef) {
+      values.push(filters.externalRef);
+      conditions.push(`external_ref = $${values.length}`);
+    }
+    if (filters.uninvoiced) {
+      conditions.push("(cfdi_id IS NULL OR cfdi_id = '')");
+    }
+    if (filters.from) {
+      values.push(filters.from);
+      conditions.push(`created_at >= $${values.length}`);
+    }
+    if (filters.to) {
+      values.push(filters.to);
+      conditions.push(`created_at <= $${values.length}`);
+    }
+    if (filters.search) {
+      values.push(`%${filters.search.toLowerCase()}%`);
+      conditions.push(
+        `(LOWER(concept) LIKE $${values.length} OR LOWER(COALESCE(external_ref, '')) LIKE $${values.length} OR LOWER(COALESCE(customer->>'email', '')) LIKE $${values.length})`
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const [rowsResult, countResult] = await Promise.all([
+      currentPool.query(
+        `SELECT * FROM orders ${whereClause} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+        values
+      ),
+      currentPool.query(`SELECT COUNT(*)::int AS total FROM orders ${whereClause}`, values),
+    ]);
+
+    return { orders: rowsResult.rows.map(mapOrderRow), total: countResult.rows[0].total };
+  }
+
+  const allOrders = await readOrdersFileList();
+  const search = (filters.search || "").toLowerCase();
+  const filtered = allOrders.filter(
+    (order) =>
+      (!filters.applicationId || order.applicationId === filters.applicationId) &&
+      (!filters.businessLineId || order.businessLineId === filters.businessLineId) &&
+      (!filters.status || order.status === filters.status) &&
+      (!filters.externalRef || order.externalRef === filters.externalRef) &&
+      (!filters.uninvoiced || !order.cfdiId) &&
+      (!filters.from || order.createdAt >= filters.from) &&
+      (!filters.to || order.createdAt <= filters.to) &&
+      (!search ||
+        order.concept.toLowerCase().includes(search) ||
+        (order.externalRef || "").toLowerCase().includes(search) ||
+        (order.customer?.email || "").toLowerCase().includes(search))
+  );
+
+  return { orders: filtered.slice(offset, offset + limit), total: filtered.length };
+}
+
+// Resumen de ventas: KPIs, serie mensual y desgloses por línea/aplicación.
+// Calcula en JS sobre las órdenes filtradas (volúmenes actuales lo permiten
+// en ambos modos de storage; si crece, migrar a agregados SQL).
+async function buildSalesSummary({ businessLineId = "", months = 6 } = {}) {
+  const [{ orders }, businessLines, applications] = await Promise.all([
+    listOrders({ businessLineId, limit: 200000 }),
+    readBusinessLines(),
+    readApplications(),
+  ]);
+
+  const monthCount = Math.min(Math.max(Number(months) || 6, 1), 24);
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const paidOrders = orders.filter((order) => order.status === "paid");
+
+  const kpis = {
+    revenueTotal: roundMoney(paidOrders.reduce((total, order) => total + order.amount, 0)),
+    revenueThisMonth: roundMoney(
+      paidOrders.filter((order) => (order.paidAt || "").startsWith(thisMonth)).reduce((total, order) => total + order.amount, 0)
+    ),
+    paidOrders: paidOrders.length,
+    avgTicket: paidOrders.length > 0 ? roundMoney(paidOrders.reduce((total, order) => total + order.amount, 0) / paidOrders.length) : 0,
+    pendingOrders: orders.filter((order) => order.status === "pending").length,
+    refundedAmount: roundMoney(
+      orders.filter((order) => order.status === "refunded").reduce((total, order) => total + order.amount, 0)
+    ),
+  };
+
+  const monthlyRevenue = [];
+  const reference = new Date();
+  for (let index = monthCount - 1; index >= 0; index -= 1) {
+    const monthDate = new Date(reference.getFullYear(), reference.getMonth() - index, 1);
+    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
+    const monthOrders = paidOrders.filter((order) => (order.paidAt || "").startsWith(monthKey));
+    monthlyRevenue.push({
+      month: monthKey,
+      revenue: roundMoney(monthOrders.reduce((total, order) => total + order.amount, 0)),
+      orders: monthOrders.length,
+    });
+  }
+
+  const byLine = businessLines.map((line) => {
+    const lineOrders = paidOrders.filter((order) => order.businessLineId === line.id);
+    return {
+      businessLineId: line.id,
+      slug: line.slug,
+      name: line.name,
+      color: line.color,
+      status: line.status,
+      revenue: roundMoney(lineOrders.reduce((total, order) => total + order.amount, 0)),
+      orders: lineOrders.length,
+    };
+  });
+
+  const byApplication = applications
+    .map((application) => {
+      const appOrders = paidOrders.filter((order) => order.applicationId === application.id);
+      return {
+        applicationId: application.id,
+        name: application.name,
+        businessLineId: application.businessLineId || "",
+        revenue: roundMoney(appOrders.reduce((total, order) => total + order.amount, 0)),
+        orders: appOrders.length,
+      };
+    })
+    .filter((entry) => entry.orders > 0 || !businessLineId);
+
+  return {
+    kpis,
+    monthlyRevenue,
+    byLine,
+    byApplication,
+    recentOrders: orders.slice(0, 10),
+  };
+}
+
+async function saveDelivery(delivery) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    await currentPool.query(
+      `
+        INSERT INTO outbound_webhook_deliveries (
+          id, application_id, order_id, event_type, payload, target_url, status,
+          attempts, next_attempt_at, last_status_code, last_error, delivered_at,
+          created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          attempts = EXCLUDED.attempts,
+          next_attempt_at = EXCLUDED.next_attempt_at,
+          last_status_code = EXCLUDED.last_status_code,
+          last_error = EXCLUDED.last_error,
+          delivered_at = EXCLUDED.delivered_at,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        delivery.id,
+        delivery.applicationId || null,
+        delivery.orderId || null,
+        delivery.eventType,
+        JSON.stringify(sanitizePlainObject(delivery.payload)),
+        delivery.targetUrl,
+        delivery.status || "pending",
+        delivery.attempts || 0,
+        delivery.nextAttemptAt || null,
+        delivery.lastStatusCode === null || delivery.lastStatusCode === undefined ? null : delivery.lastStatusCode,
+        delivery.lastError || null,
+        delivery.deliveredAt || null,
+        delivery.createdAt || new Date().toISOString(),
+        delivery.updatedAt || new Date().toISOString(),
+      ]
+    );
+    return;
+  }
+
+  await ensureOutboundDeliveriesFile();
+  const raw = await fs.readFile(outboundDeliveriesFile, "utf8");
+  const deliveries = JSON.parse(raw);
+  const deliveryIndex = deliveries.findIndex((item) => item.id === delivery.id);
+
+  if (deliveryIndex === -1) {
+    deliveries.unshift(delivery);
+  } else {
+    deliveries[deliveryIndex] = delivery;
+  }
+
+  await fs.writeFile(outboundDeliveriesFile, JSON.stringify(deliveries.slice(0, 500), null, 2), "utf8");
+}
+
+async function listDeliveries(filters = {}) {
+  const currentPool = getPool();
+
+  if (currentPool) {
+    await ensureDatabase();
+    const conditions = [];
+    const values = [];
+
+    if (filters.orderId) {
+      values.push(filters.orderId);
+      conditions.push(`order_id = $${values.length}`);
+    }
+    if (filters.id) {
+      values.push(filters.id);
+      conditions.push(`id = $${values.length}`);
+    }
+    if (filters.duePending) {
+      // Se compara contra la hora del hub (quien escribió next_attempt_at),
+      // no contra NOW() de la BD: evita desfases de reloj entre procesos.
+      values.push(new Date().toISOString());
+      conditions.push(`status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= $${values.length})`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const { rows } = await currentPool.query(
+      `SELECT * FROM outbound_webhook_deliveries ${whereClause} ORDER BY created_at DESC LIMIT 50`
+    , values);
+    return rows.map(mapDeliveryRow);
+  }
+
+  await ensureOutboundDeliveriesFile();
+  const raw = await fs.readFile(outboundDeliveriesFile, "utf8");
+  const deliveries = JSON.parse(raw);
+  const now = new Date().toISOString();
+
+  return deliveries
+    .filter(
+      (delivery) =>
+        (!filters.orderId || delivery.orderId === filters.orderId) &&
+        (!filters.id || delivery.id === filters.id) &&
+        (!filters.duePending || (delivery.status === "pending" && (!delivery.nextAttemptAt || delivery.nextAttemptAt <= now)))
+    )
+    .slice(0, 50);
+}
+
+// Firma estilo Stripe con el webhook secret (gws_) de la aplicación:
+// x-giovsoft-signature: t=<unix>,v1=<hmac-sha256(secret, "<t>.<body>")>
+function signOutboundPayload(secret, rawBody) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = crypto.createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
+  return `t=${timestamp},v1=${signature}`;
+}
+
+// Intenta entregar un webhook saliente y actualiza su estado/reintentos.
+async function attemptDelivery(delivery, application) {
+  const rawBody = JSON.stringify(delivery.payload);
+  const attemptNumber = (delivery.attempts || 0) + 1;
+  const now = new Date().toISOString();
+  let statusCode = null;
+  let errorMessage = "";
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), outboundTimeoutMs);
+    const response = await fetch(delivery.targetUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-giovsoft-signature": signOutboundPayload(application.webhookSecret, rawBody),
+        "x-giovsoft-event-id": delivery.id,
+        "x-giovsoft-event-type": delivery.eventType,
+      },
+      body: rawBody,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    statusCode = response.status;
+
+    if (response.ok) {
+      await saveDelivery({
+        ...delivery,
+        status: "delivered",
+        attempts: attemptNumber,
+        lastStatusCode: statusCode,
+        lastError: "",
+        deliveredAt: now,
+        nextAttemptAt: null,
+        updatedAt: now,
+      });
+      return true;
+    }
+
+    errorMessage = `HTTP ${statusCode}`;
+  } catch (error) {
+    errorMessage = error.name === "AbortError" ? `Timeout tras ${outboundTimeoutMs / 1000}s` : error.message;
+  }
+
+  const exhausted = attemptNumber >= outboundRetryDelaysMs.length;
+  // Tras el intento N fallido se espera el retraso N-1: [30s, 2m, 10m, 30m, 2h].
+  const nextDelay = outboundRetryDelaysMs[Math.min(attemptNumber - 1, outboundRetryDelaysMs.length - 1)];
+
+  await saveDelivery({
+    ...delivery,
+    status: exhausted ? "exhausted" : "pending",
+    attempts: attemptNumber,
+    lastStatusCode: statusCode,
+    lastError: errorMessage,
+    nextAttemptAt: exhausted ? null : new Date(Date.now() + nextDelay).toISOString(),
+    updatedAt: now,
+  });
+  return false;
+}
+
+// Barrido periódico de entregas pendientes vencidas. Nota para Cloud Run:
+// con scale-to-zero este intervalo solo corre con una instancia caliente;
+// el polling del producto (GET /api/v1/orders/:id) cubre los huecos.
+async function sweepPendingDeliveries() {
+  try {
+    const dueDeliveries = await listDeliveries({ duePending: true });
+
+    if (dueDeliveries.length === 0) {
+      return;
+    }
+
+    const applications = await readApplications();
+
+    for (const delivery of dueDeliveries.slice(0, 20)) {
+      const application = applications.find((item) => item.id === delivery.applicationId);
+
+      if (!application) {
+        await saveDelivery({ ...delivery, status: "exhausted", lastError: "Aplicación no encontrada", updatedAt: new Date().toISOString() });
+        continue;
+      }
+
+      await attemptDelivery(delivery, application);
+    }
+  } catch (error) {
+    console.error("Error en el barrido de webhooks salientes:", error.message);
+  }
+}
+
+setInterval(sweepPendingDeliveries, 30 * 1000).unref();
 
 async function storeApplicationWebhookEvent(application, event) {
   const currentPool = getPool();
@@ -2919,6 +3748,10 @@ function createApplicationSecret() {
   return `gws_${crypto.randomBytes(24).toString("base64url")}`;
 }
 
+function createApplicationApiKey() {
+  return `gwk_${crypto.randomBytes(24).toString("hex")}`;
+}
+
 function publicConnectedApplication(application) {
   return {
     apiBaseUrl: application.apiBaseUrl || "",
@@ -2940,9 +3773,16 @@ function validateApplicationPayload(body, existingApplication) {
     name: sanitizeText(body.name || existingApplication?.name),
     domain: sanitizeText(body.domain || existingApplication?.domain),
     apiBaseUrl: sanitizeText(body.apiBaseUrl || existingApplication?.apiBaseUrl),
+    businessLineId: sanitizeText(
+      body.businessLineId !== undefined ? body.businessLineId : existingApplication?.businessLineId
+    ),
     status: applicationStatuses.has(status) ? status : "pending",
     ssoEnabled: body.ssoEnabled !== undefined ? Boolean(body.ssoEnabled) : existingApplication?.ssoEnabled !== false,
     webhookSecret: sanitizeText(body.webhookSecret || existingApplication?.webhookSecret || createApplicationSecret()),
+    apiKey: sanitizeText(existingApplication?.apiKey || createApplicationApiKey()),
+    outboundWebhookUrl: sanitizeText(
+      body.outboundWebhookUrl !== undefined ? body.outboundWebhookUrl : existingApplication?.outboundWebhookUrl
+    ),
     loginRedirectUrl: sanitizeText(body.loginRedirectUrl || existingApplication?.loginRedirectUrl),
     config: {
       syncUsers: config.syncUsers !== false,
@@ -3467,6 +4307,521 @@ app.post("/api/webhooks/billing/:systemId", async (req, res, next) => {
     });
   } catch (error) {
     return next(error);
+  }
+});
+
+/* ============================================================
+   Motor de checkout centralizado (API para productos, /api/v1)
+   ============================================================ */
+
+// Autenticación de aplicaciones conectadas: x-giovsoft-app-id + x-giovsoft-api-key.
+async function requireApplicationAuth(req, res, next) {
+  try {
+    const applicationId = sanitizeText(req.get("x-giovsoft-app-id"));
+    const apiKey = sanitizeText(req.get("x-giovsoft-api-key"));
+
+    if (!applicationId || !apiKey) {
+      return res.status(401).json({ message: "Credenciales de aplicación requeridas." });
+    }
+
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === applicationId);
+
+    if (!application || !verifyWebhookSecret(apiKey, application.apiKey)) {
+      return res.status(401).json({ message: "Credenciales de aplicación inválidas." });
+    }
+
+    if (application.status !== "active") {
+      return res.status(403).json({ message: "La aplicación no está activa en el hub." });
+    }
+
+    req.application = application;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+// Vista pública de una orden para el producto (nunca expone datos internos).
+function publicOrder(order) {
+  return {
+    id: order.id,
+    status: order.status,
+    concept: order.concept,
+    sku: order.sku,
+    plan: order.plan,
+    amount: order.amount,
+    subtotal: order.subtotal,
+    tax: order.tax,
+    currency: order.currency,
+    externalRef: order.externalRef,
+    customer: order.customer,
+    metadata: order.metadata,
+    stripeSessionId: order.stripeSessionId,
+    cfdi: order.cfdiId ? { id: order.cfdiId } : null,
+    paidAt: order.paidAt || null,
+    createdAt: order.createdAt,
+  };
+}
+
+// Marca una orden como pagada y propaga: métricas de la aplicación (motor de
+// pagos existente) y, en fases siguientes, webhook saliente al producto.
+async function handleOrderPaid(order, application, extra = {}) {
+  if (order.status === "paid") {
+    return order;
+  }
+
+  const paidOrder = {
+    ...order,
+    status: "paid",
+    paidAt: new Date().toISOString(),
+    stripePaymentIntentId: extra.paymentIntentId || order.stripePaymentIntentId || "",
+    updatedAt: new Date().toISOString(),
+  };
+  await saveOrder(paidOrder);
+
+  if (application) {
+    await storeApplicationWebhookEvent(application, {
+      eventType: "payment.received",
+      amount: paidOrder.amount,
+      currency: paidOrder.currency,
+      occurredAt: paidOrder.paidAt,
+      payload: {
+        orderId: paidOrder.id,
+        concept: paidOrder.concept,
+        plan: paidOrder.plan,
+        externalRef: paidOrder.externalRef,
+        source: "hub-checkout",
+      },
+    }).catch((error) => console.error("No se pudo registrar el evento de pago:", error.message));
+  }
+
+  await notifyOrderEvent(paidOrder, application, "order.paid");
+  return paidOrder;
+}
+
+// Webhook saliente al producto: crea el registro de entrega y hace el primer
+// intento en línea (los reintentos corren en el barrido cada 30s).
+async function notifyOrderEvent(order, application, eventType) {
+  if (!application) {
+    console.warn(`[orden ${order.id}] evento ${eventType} sin aplicación asociada; no se notifica.`);
+    return;
+  }
+
+  const targetUrl =
+    sanitizeText(application.outboundWebhookUrl) ||
+    `${String(application.apiBaseUrl || "").replace(/\/$/, "")}/api/payments/hub-webhook`;
+
+  if (!targetUrl.startsWith("http")) {
+    console.warn(`[orden ${order.id}] la aplicación ${application.name} no tiene URL de webhook válida.`);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const delivery = {
+    id: crypto.randomUUID(),
+    applicationId: application.id,
+    orderId: order.id,
+    eventType,
+    payload: {
+      id: crypto.randomUUID(),
+      eventType,
+      occurredAt: now,
+      data: {
+        orderId: order.id,
+        externalRef: order.externalRef,
+        plan: order.plan,
+        sku: order.sku,
+        concept: order.concept,
+        amount: order.amount,
+        subtotal: order.subtotal,
+        tax: order.tax,
+        currency: order.currency,
+        status: order.status,
+        paidAt: order.paidAt || null,
+        stripeSessionId: order.stripeSessionId,
+        customer: order.customer,
+        metadata: order.metadata,
+      },
+    },
+    targetUrl,
+    status: "pending",
+    attempts: 0,
+    nextAttemptAt: now,
+    lastStatusCode: null,
+    lastError: "",
+    deliveredAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await saveDelivery(delivery);
+  // Primer intento inmediato, sin bloquear la respuesta del webhook de Stripe.
+  attemptDelivery(delivery, application).catch((error) =>
+    console.error(`[orden ${order.id}] error en el primer intento de entrega:`, error.message)
+  );
+}
+
+app.post("/api/v1/checkout/sessions", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const application = req.application;
+    const idempotencyKey = sanitizeText(req.get("x-idempotency-key"));
+
+    if (!idempotencyKey) {
+      return res.status(400).json({ message: "El encabezado x-idempotency-key es requerido." });
+    }
+
+    // Replay idempotente: misma llave → misma orden.
+    const existingOrder = await findOrder({ applicationId: application.id, idempotencyKey });
+    if (existingOrder) {
+      return res.status(200).json({
+        order: publicOrder(existingOrder),
+        checkoutUrl: existingOrder.metadata?.checkoutUrl || null,
+        replayed: true,
+      });
+    }
+
+    const concept = sanitizeText(req.body.concept);
+    const amountTotal = roundMoney(Number(req.body.amountTotal));
+    const externalRef = sanitizeText(req.body.externalRef);
+    const successUrl = sanitizeText(req.body.successUrl);
+    const cancelUrl = sanitizeText(req.body.cancelUrl);
+
+    if (!concept) {
+      return res.status(400).json({ message: "El concepto es requerido." });
+    }
+    if (!Number.isFinite(amountTotal) || amountTotal <= 0) {
+      return res.status(400).json({ message: "El monto total (amountTotal) debe ser mayor a cero." });
+    }
+    if (!externalRef) {
+      return res.status(400).json({ message: "La referencia externa (externalRef) es requerida." });
+    }
+
+    for (const [field, value] of [["successUrl", successUrl], ["cancelUrl", cancelUrl]]) {
+      if (!value) {
+        return res.status(400).json({ message: `La URL ${field} es requerida.` });
+      }
+      try {
+        new URL(value);
+      } catch (_error) {
+        return res.status(400).json({ message: `La URL ${field} no es válida.` });
+      }
+    }
+
+    const subtotal = roundMoney(amountTotal / (1 + IVA_RATE));
+    const tax = roundMoney(amountTotal - subtotal);
+    const now = new Date().toISOString();
+    const order = {
+      id: crypto.randomUUID(),
+      applicationId: application.id,
+      businessLineId: application.businessLineId || "",
+      sku: sanitizeText(req.body.sku),
+      plan: sanitizeText(req.body.plan),
+      concept,
+      amount: amountTotal,
+      subtotal,
+      tax,
+      currency: sanitizeText(req.body.currency).toUpperCase() || "MXN",
+      status: "pending",
+      stripeSessionId: "",
+      stripePaymentIntentId: "",
+      externalRef,
+      idempotencyKey,
+      customer: sanitizePlainObject(req.body.customer),
+      metadata: sanitizePlainObject(req.body.metadata),
+      cfdiId: "",
+      paidAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const stripe = getStripe();
+
+    if (!stripe) {
+      // Modo simulación: sin llaves de Stripe la orden queda pendiente y se
+      // confirma con mark-paid desde el admin (útil en desarrollo y pruebas).
+      order.metadata = { ...order.metadata, simulated: true };
+      await saveOrder(order);
+      return res.status(201).json({ order: publicOrder(order), checkoutUrl: null, simulated: true });
+    }
+
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: order.currency.toLowerCase(),
+              unit_amount: Math.round(order.amount * 100),
+              product_data: { name: order.concept },
+            },
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        customer_email: order.customer.email || undefined,
+        metadata: {
+          orderId: order.id,
+          applicationId: application.id,
+          businessLineId: order.businessLineId,
+          externalRef: order.externalRef,
+          plan: order.plan,
+          sku: order.sku,
+          subtotal: String(order.subtotal),
+          tax: String(order.tax),
+        },
+        payment_intent_data: { metadata: { orderId: order.id } },
+      },
+      { idempotencyKey: `checkout-${order.id}` }
+    );
+
+    order.stripeSessionId = session.id;
+    order.metadata = { ...order.metadata, checkoutUrl: session.url };
+    await saveOrder(order);
+
+    return res.status(201).json({
+      order: publicOrder(order),
+      checkoutUrl: session.url,
+      expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+    });
+  } catch (error) {
+    if (error?.type?.startsWith("Stripe")) {
+      console.error("Error de Stripe al crear la sesión:", error.message);
+      return res.status(502).json({ message: "No se pudo crear la sesión de pago con Stripe." });
+    }
+    return next(error);
+  }
+});
+
+app.get("/api/v1/orders/:orderId", requireApplicationAuth, async (req, res, next) => {
+  try {
+    let order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+
+    // Conciliación: si el webhook de Stripe se perdió, el polling del
+    // producto verifica la sesión directamente y rescata el pago.
+    const stripe = getStripe();
+    if (order.status === "pending" && order.stripeSessionId && stripe) {
+      try {
+        const session = await stripe.checkout.sessions.retrieve(order.stripeSessionId);
+
+        if (session.payment_status === "paid") {
+          console.log(`[conciliación] orden ${order.id} pagada en Stripe sin webhook; actualizando.`);
+          order = await handleOrderPaid(order, req.application, { paymentIntentId: session.payment_intent || "" });
+        } else if (session.status === "expired" && order.status === "pending") {
+          order = { ...order, status: "expired", updatedAt: new Date().toISOString() };
+          await saveOrder(order);
+        }
+      } catch (stripeError) {
+        console.warn(`[conciliación] no se pudo consultar la sesión de la orden ${order.id}:`, stripeError.message);
+      }
+    }
+
+    return res.json({ order: publicOrder(order) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/v1/orders", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const { orders, total } = await listOrders({
+      applicationId: req.application.id,
+      externalRef: sanitizeText(req.query.externalRef),
+      status: sanitizeText(req.query.status),
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+
+    return res.json({ orders: orders.map(publicOrder), total });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Solicitud de CFDI para una orden pagada (facturación automática del
+// producto). El receptor viene en el payload; el timbrado reutiliza el motor
+// de CSFacturación (o queda en draft en modo simulación).
+app.post("/api/v1/orders/:orderId/cfdi", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+    if (order.status !== "paid") {
+      return res.status(422).json({ message: "Solo se pueden facturar órdenes pagadas." });
+    }
+    if (order.cfdiId) {
+      return res.status(409).json({ message: "La orden ya tiene un CFDI vinculado.", cfdiId: order.cfdiId });
+    }
+
+    const receptorBody = sanitizePlainObject(req.body.receptor);
+    const receptor = {
+      rfc: sanitizeText(receptorBody.rfc).toUpperCase(),
+      legalName: sanitizeText(receptorBody.legalName || receptorBody.name),
+      taxRegime: sanitizeText(receptorBody.taxRegime),
+      cfdiUse: sanitizeText(receptorBody.cfdiUse) || "G03",
+      fiscalAddress: { postalCode: sanitizeText(receptorBody.postalCode) },
+    };
+
+    const receptorValidation = validateFiscalClient(receptor);
+    if (!receptorValidation.valid) {
+      return res.status(400).json({
+        message: `Datos fiscales del receptor incompletos: ${receptorValidation.missing.join(", ")}.`,
+      });
+    }
+
+    const state = await readBillingSatState();
+
+    if (!state.emitter.rfc || !state.emitter.taxRegime || !state.emitter.postalCode) {
+      return res.status(503).json({ message: "El emisor fiscal del hub no está configurado." });
+    }
+
+    const payload = buildCfdiPayloadForReceptor(
+      {
+        concept: order.concept,
+        amount: order.subtotal,
+        taxRate: IVA_RATE,
+        cfdiUse: receptor.cfdiUse,
+        paymentForm: sanitizeText(req.body.paymentForm) || "03",
+        paymentMethod: "PUE",
+        series: sanitizeText(req.body.series) || "A",
+      },
+      state,
+      receptor
+    );
+
+    const { cfdi } = await stampAndStoreCfdi(state, payload, {
+      clientName: receptor.legalName,
+      orderId: order.id,
+      businessLineId: order.businessLineId,
+    });
+
+    await saveOrder({ ...order, cfdiId: cfdi.id, updatedAt: new Date().toISOString() });
+
+    return res.status(201).json({
+      cfdi: {
+        id: cfdi.id,
+        folio: cfdi.folio,
+        status: cfdi.status,
+        uuid: cfdi.uuid,
+        subtotal: cfdi.subtotal,
+        tax: cfdi.tax,
+        total: cfdi.total,
+        environment: cfdi.environment,
+      },
+      message:
+        cfdi.status === "issued"
+          ? "CFDI timbrado por CSFacturación."
+          : "CFDI preparado en modo simulación (CSFACTURACION_ENABLED desactivado).",
+    });
+  } catch (error) {
+    error.statusCode = error.statusCode || 500;
+    return next(error);
+  }
+});
+
+// Descarga de documentos del CFDI de una orden (xml o pdf en base64).
+app.get("/api/v1/orders/:orderId/cfdi/document/:type", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.orderId, applicationId: req.application.id });
+
+    if (!order || !order.cfdiId) {
+      return res.status(404).json({ message: "La orden no tiene CFDI." });
+    }
+
+    const state = await readBillingSatState();
+    const cfdi = safeArray(state.cfdis).find((item) => item.id === order.cfdiId);
+
+    if (!cfdi) {
+      return res.status(404).json({ message: "CFDI no encontrado." });
+    }
+
+    const type = sanitizeText(req.params.type).toLowerCase();
+    const contentByType = {
+      xml: { base64: cfdi.xmlBase64, mime: "application/xml", extension: "xml" },
+      pdf: { base64: cfdi.pdfBase64, mime: "application/pdf", extension: "pdf" },
+    };
+    const document = contentByType[type];
+
+    if (!document) {
+      return res.status(400).json({ message: "Tipo de documento inválido (xml o pdf)." });
+    }
+    if (!document.base64) {
+      return res.status(409).json({ message: "El documento aún no está disponible (CFDI sin timbrar)." });
+    }
+
+    res.setHeader("Content-Type", document.mime);
+    res.setHeader("Content-Disposition", `attachment; filename="cfdi-${cfdi.folio}.${document.extension}"`);
+    return res.send(Buffer.from(document.base64, "base64"));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Webhook global de Stripe para el checkout centralizado (verificado con el
+// SDK; la ruta legacy por sistema /api/webhooks/payments/stripe/:systemId
+// sigue funcionando igual que antes).
+app.post("/api/webhooks/stripe", async (req, res) => {
+  const stripe = getStripe();
+
+  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
+    return res.status(503).json({ message: "Stripe no está configurado en el hub." });
+  }
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody, req.get("stripe-signature"), process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (error) {
+    return res.status(400).json({ message: `Firma de Stripe inválida: ${error.message}` });
+  }
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const order =
+        (session.metadata?.orderId && (await findOrder({ id: session.metadata.orderId }))) ||
+        (await findOrder({ stripeSessionId: session.id }));
+
+      if (!order) {
+        // Evento de una sesión que no creó el hub (p. ej. stripe trigger): se ignora.
+        console.warn(`Webhook Stripe sin orden asociada (session ${session.id}).`);
+        return res.json({ received: true, ignored: true });
+      }
+
+      const applications = await readApplications();
+      const application = applications.find((item) => item.id === order.applicationId) || null;
+      await handleOrderPaid(order, application, { paymentIntentId: session.payment_intent || "" });
+    } else if (event.type === "checkout.session.expired") {
+      const session = event.data.object;
+      const order = await findOrder({ stripeSessionId: session.id });
+
+      if (order && order.status === "pending") {
+        await saveOrder({ ...order, status: "expired", updatedAt: new Date().toISOString() });
+      }
+    } else if (event.type === "charge.refunded") {
+      const charge = event.data.object;
+      const orderId = charge.metadata?.orderId || "";
+      const order = orderId ? await findOrder({ id: orderId }) : null;
+
+      if (order && order.status === "paid") {
+        const refundedOrder = { ...order, status: "refunded", updatedAt: new Date().toISOString() };
+        await saveOrder(refundedOrder);
+        const applications = await readApplications();
+        const application = applications.find((item) => item.id === order.applicationId) || null;
+        await notifyOrderEvent(refundedOrder, application, "order.refunded");
+      }
+    }
+
+    return res.json({ received: true });
+  } catch (error) {
+    console.error("Error procesando webhook de Stripe:", error);
+    return res.status(500).json({ message: "Error interno procesando el evento." });
   }
 });
 
@@ -4311,45 +5666,31 @@ app.post("/api/admin/billing/sat/issue", async (req, res, next) => {
     }
 
     const payload = buildCfdiPayload(req.body, state, clients);
-    const now = new Date().toISOString();
-    const cfdi = {
-      id: crypto.randomUUID(),
-      clientId: client.id,
-      clientName: client.legalName || client.businessName,
-      folio: `${payload.Comprobante.Serie}-${payload.Comprobante.Folio}`,
-      provider: state.provider.name,
-      environment: state.provider.environment,
-      status: "draft",
-      subtotal: payload.Comprobante.SubTotal,
-      tax: roundMoney(payload.Comprobante.Total - payload.Comprobante.SubTotal),
-      total: payload.Comprobante.Total,
-      uuid: "",
-      xmlBase64: "",
-      pdfBase64: "",
-      qrBase64: "",
-      payload,
-      providerResponse: {},
-      createdAt: now,
-      updatedAt: now,
-    };
+    const orderId = sanitizeText(req.body.orderId);
+    let order = null;
 
-    const credentials = {
-      username: state.provider.username || process.env.CSFACTURACION_USERNAME || process.env.CSFACTURACION_USER,
-      password: process.env.CSFACTURACION_PASSWORD || process.env.CSFACTURACION_PASS,
-    };
+    if (orderId) {
+      order = await findOrder({ id: orderId });
 
-    if (process.env.CSFACTURACION_ENABLED === "true" && credentials.username && credentials.password) {
-      const endpoints = buildCsFacturacionEndpoints(state.provider);
-      const providerResponse = await callCsFacturacion(endpoints.issue, credentials, payload);
-      cfdi.status = "issued";
-      cfdi.uuid = providerResponse?.data?.uuid || providerResponse?.uuid || "";
-      cfdi.xmlBase64 = providerResponse?.data?.xml || "";
-      cfdi.pdfBase64 = providerResponse?.data?.pdf || "";
-      cfdi.qrBase64 = providerResponse?.data?.qr || "";
-      cfdi.providerResponse = providerResponse;
+      if (!order) {
+        return res.status(404).json({ message: "La orden indicada no existe." });
+      }
+      if (order.cfdiId) {
+        return res.status(409).json({ message: "La orden ya tiene un CFDI vinculado." });
+      }
     }
 
-    const updated = await writeBillingSatState({ ...state, cfdis: [cfdi, ...safeArray(state.cfdis)] });
+    const { cfdi, updatedState: updated } = await stampAndStoreCfdi(state, payload, {
+      clientId: client.id,
+      clientName: client.legalName || client.businessName,
+      orderId,
+      businessLineId: order?.businessLineId || "",
+    });
+
+    if (order) {
+      await saveOrder({ ...order, cfdiId: cfdi.id, updatedAt: new Date().toISOString() });
+    }
+
     return res.status(201).json({
       cfdi,
       message: cfdi.status === "issued" ? "CFDI emitido por CSFacturación." : "CFDI preparado en modo simulación. Activa CSFACTURACION_ENABLED para timbrar.",
@@ -4525,6 +5866,240 @@ app.patch("/api/admin/applications/:id", async (req, res, next) => {
   }
 });
 
+app.get("/api/admin/business-lines", async (_req, res, next) => {
+  try {
+    const [businessLines, applications] = await Promise.all([readBusinessLines(), readApplications()]);
+
+    // Roll-up por línea a partir de las métricas de sus aplicaciones.
+    const withMetrics = businessLines.map((line) => {
+      const lineApps = applications.filter((application) => application.businessLineId === line.id);
+      return {
+        ...line,
+        metrics: {
+          applications: lineApps.length,
+          events: lineApps.reduce((total, app) => total + Number(app.metrics?.events || 0), 0),
+          payments: lineApps.reduce((total, app) => total + Number(app.metrics?.payments || 0), 0),
+          revenue: lineApps.reduce((total, app) => total + Number(app.metrics?.revenue || 0), 0),
+        },
+        applications: lineApps.map((app) => ({ id: app.id, name: app.name, status: app.status })),
+      };
+    });
+
+    return res.json({ businessLines: withMetrics });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/business-lines", async (req, res, next) => {
+  try {
+    const name = sanitizeText(req.body.name);
+    const slug = sanitizeText(req.body.slug).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+
+    if (!name) {
+      return res.status(400).json({ message: "El nombre de la línea de negocio es requerido." });
+    }
+
+    if (!slug) {
+      return res.status(400).json({ message: "El identificador (slug) es requerido." });
+    }
+
+    const businessLines = await readBusinessLines();
+
+    if (businessLines.some((line) => line.slug === slug)) {
+      return res.status(409).json({ message: "Ya existe una línea de negocio con ese identificador." });
+    }
+
+    const now = new Date().toISOString();
+    const businessLine = {
+      id: crypto.randomUUID(),
+      slug,
+      name,
+      description: sanitizeText(req.body.description),
+      color: sanitizeText(req.body.color),
+      icon: sanitizeText(req.body.icon),
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    businessLines.push(businessLine);
+    await writeBusinessLines(businessLines);
+
+    return res.status(201).json({ businessLine, message: "Línea de negocio creada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.patch("/api/admin/business-lines/:id", async (req, res, next) => {
+  try {
+    const businessLines = await readBusinessLines();
+    const lineIndex = businessLines.findIndex((line) => line.id === req.params.id);
+
+    if (lineIndex === -1) {
+      return res.status(404).json({ message: "Línea de negocio no encontrada." });
+    }
+
+    const current = businessLines[lineIndex];
+    const status = sanitizeText(req.body.status || current.status);
+
+    if (!["active", "archived"].includes(status)) {
+      return res.status(400).json({ message: "Estado inválido (active o archived)." });
+    }
+
+    // El slug es inmutable: las órdenes y aplicaciones lo referencian por id,
+    // pero los enlaces del panel usan el slug.
+    const updated = {
+      ...current,
+      name: sanitizeText(req.body.name || current.name),
+      description: req.body.description !== undefined ? sanitizeText(req.body.description) : current.description,
+      color: req.body.color !== undefined ? sanitizeText(req.body.color) : current.color,
+      icon: req.body.icon !== undefined ? sanitizeText(req.body.icon) : current.icon,
+      status,
+      updatedAt: new Date().toISOString(),
+    };
+
+    businessLines[lineIndex] = updated;
+    await writeBusinessLines(businessLines);
+
+    return res.json({ businessLine: updated, message: "Línea de negocio actualizada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/orders", async (req, res, next) => {
+  try {
+    const { orders, total } = await listOrders({
+      applicationId: sanitizeText(req.query.applicationId),
+      businessLineId: sanitizeText(req.query.businessLineId),
+      status: sanitizeText(req.query.status),
+      uninvoiced: req.query.uninvoiced === "1",
+      from: sanitizeText(req.query.from),
+      to: sanitizeText(req.query.to),
+      search: sanitizeText(req.query.q),
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+
+    return res.json({ orders, total });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/orders/:id", async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+
+    const deliveries = await listDeliveries({ orderId: order.id });
+    return res.json({ order, deliveries });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Reintento manual de una entrega saliente (delivered no se reintenta).
+app.post("/api/admin/orders/:id/deliveries/:deliveryId/retry", async (req, res, next) => {
+  try {
+    const [delivery] = await listDeliveries({ id: req.params.deliveryId });
+
+    if (!delivery || delivery.orderId !== req.params.id) {
+      return res.status(404).json({ message: "Entrega no encontrada." });
+    }
+
+    if (delivery.status === "delivered") {
+      return res.status(409).json({ message: "La entrega ya fue exitosa." });
+    }
+
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === delivery.applicationId);
+
+    if (!application) {
+      return res.status(404).json({ message: "La aplicación de la entrega ya no existe." });
+    }
+
+    const delivered = await attemptDelivery({ ...delivery, status: "pending" }, application);
+    const [updated] = await listDeliveries({ id: delivery.id });
+
+    return res.json({
+      delivery: updated,
+      message: delivered ? "Entrega reenviada con éxito." : "El reintento falló; se reprogramó según el backoff.",
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Confirmación manual (modo simulación sin Stripe, o conciliación).
+app.post("/api/admin/orders/:id/mark-paid", async (req, res, next) => {
+  try {
+    const order = await findOrder({ id: req.params.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Orden no encontrada." });
+    }
+
+    if (order.status === "paid") {
+      return res.status(409).json({ message: "La orden ya está pagada." });
+    }
+
+    if (!["pending", "failed", "expired"].includes(order.status)) {
+      return res.status(400).json({ message: `No se puede marcar como pagada una orden en estado ${order.status}.` });
+    }
+
+    const applications = await readApplications();
+    const application = applications.find((item) => item.id === order.applicationId) || null;
+    const paidOrder = await handleOrderPaid(order, application, {});
+    console.log(`[admin] orden ${paidOrder.id} marcada como pagada (${paidOrder.concept}, $${paidOrder.amount}).`);
+
+    return res.json({ order: paidOrder, message: "Orden marcada como pagada." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/sales/summary", async (req, res, next) => {
+  try {
+    const summary = await buildSalesSummary({
+      businessLineId: sanitizeText(req.query.businessLineId),
+      months: req.query.months,
+    });
+
+    return res.json(summary);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/applications/:id/api-key", async (req, res, next) => {
+  try {
+    const applications = await readApplications();
+    const applicationIndex = applications.findIndex((application) => application.id === req.params.id);
+
+    if (applicationIndex === -1) {
+      return res.status(404).json({ message: "Aplicación no encontrada." });
+    }
+
+    const apiKey = createApplicationApiKey();
+    applications[applicationIndex] = {
+      ...applications[applicationIndex],
+      apiKey,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeApplications(applications);
+
+    return res.json({ apiKey, message: "API key regenerada. Guárdala: no se volverá a mostrar completa." });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 app.patch("/api/admin/contact-requests/:id", async (req, res, next) => {
   try {
     const requests = await readRequests();
@@ -4622,6 +6197,7 @@ app.get("/api/admin/summary", async (_req, res, next) => {
         },
       ],
       recentRequests,
+      revenue: (await buildSalesSummary({ months: 6 }).catch(() => null)) || undefined,
       priorities: [
         "Contactar solicitudes nuevas durante el mismo dia.",
         "Clasificar cada lead por servicio: GiovSoft 360, web, ecommerce o Workspace.",

@@ -1,4 +1,6 @@
 import {
+  Layers,
+  TrendingUp,
   AppWindow,
   Boxes,
   BriefcaseBusiness,
@@ -37,6 +39,7 @@ const menuSections = [
   {
     title: "Productos",
     items: [
+      { name: "Líneas de negocio", icon: Layers, path: "/admin/lineas-negocio" },
       { name: "Servicios", icon: Boxes, path: "/admin/servicios" },
       { name: "Aplicaciones", icon: AppWindow, path: "/admin/aplicaciones" },
       { name: "Proyectos", icon: BriefcaseBusiness, path: "/admin/proyectos" },
@@ -45,6 +48,7 @@ const menuSections = [
   {
     title: "Operaciones",
     items: [
+      { name: "Ventas", icon: TrendingUp, path: "/admin/ventas" },
       { name: "Payments", icon: CreditCard, path: "/admin/payments" },
       { name: "Facturación", icon: ReceiptText, path: "/admin/facturacion" },
       { name: "Cotizaciones", icon: FileSignature, path: "/admin/cotizaciones" },
