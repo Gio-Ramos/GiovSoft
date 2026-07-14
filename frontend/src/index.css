@@ -4127,14 +4127,14 @@ body:has(.app-shell),
   z-index: 9999;
 }
 
-/* El menú abierto debe ganar a los contextos de apilamiento de filas vecinas
-   (chips de conexión, badges) y no ser recortado por el scroll de la tabla. */
-tr:has(.clients-action-menu.is-open),
-td:has(.clients-action-menu.is-open) {
+/* El menú abierto no debe ser recortado por el scroll de la tabla, y su fila
+   debe ganar a los contextos de apilamiento de filas vecinas. */
+tr:has(.clients-action-menu.is-open) {
   position: relative;
-  z-index: 9998;
+  z-index: 2999;
 }
-.clients-table-wrap:has(.clients-action-menu.is-open) {
+.clients-table-wrap:has(.clients-action-menu.is-open),
+.billing-table-card:has(.clients-action-menu.is-open) {
   overflow: visible;
 }
 
@@ -6104,9 +6104,10 @@ td:has(.clients-action-menu.is-open) {
 .users-data-table td:last-child:has(.users-action-menu.is-open),
 .projects-data-table td:last-child:has(.clients-action-menu.is-open),
 .billing-data-table td:last-child:has(.clients-action-menu.is-open),
+.applications-data-table td:last-child:has(.clients-action-menu.is-open),
 .roles-list-table td:last-child:has(.clients-action-menu.is-open),
 .services-plans-table td:last-child:has(.clients-action-menu.is-open) {
-  z-index: 200;
+  z-index: 3000;
 }
 
 .audit-data-table th:last-child,
