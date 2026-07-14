@@ -4124,7 +4124,18 @@ body:has(.app-shell),
   position: absolute;
   bottom: calc(50% + 1.45rem);
   right: 1.25rem;
-  z-index: 999;
+  z-index: 9999;
+}
+
+/* El menú abierto debe ganar a los contextos de apilamiento de filas vecinas
+   (chips de conexión, badges) y no ser recortado por el scroll de la tabla. */
+tr:has(.clients-action-menu.is-open),
+td:has(.clients-action-menu.is-open) {
+  position: relative;
+  z-index: 9998;
+}
+.clients-table-wrap:has(.clients-action-menu.is-open) {
+  overflow: visible;
 }
 
 .clients-action-menu.is-open {
