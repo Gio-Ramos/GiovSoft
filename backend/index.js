@@ -1671,6 +1671,31 @@ async function ensureDatabase() {
     CREATE INDEX IF NOT EXISTS idx_application_webhook_events_type
       ON application_webhook_events (event_type);
 
+    ALTER TABLE application_webhook_events ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_application_webhook_events_idempotency
+      ON application_webhook_events (application_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS lead_intelligence_opportunities (
+      id UUID PRIMARY KEY,
+      application_id UUID NOT NULL REFERENCES connected_applications (id) ON DELETE CASCADE,
+      external_opportunity_id TEXT NOT NULL,
+      company_name TEXT NOT NULL,
+      score INT NOT NULL DEFAULT 0,
+      confidence NUMERIC(4,3) NOT NULL DEFAULT 0,
+      recommended_service TEXT,
+      commercial_status TEXT NOT NULL DEFAULT 'approved',
+      assigned_to TEXT,
+      commercial_result TEXT,
+      lead_intelligence_url TEXT,
+      correlation_id TEXT,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (application_id, external_opportunity_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_lead_intelligence_status_score
+      ON lead_intelligence_opportunities (commercial_status, score DESC);
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id UUID PRIMARY KEY,
       user_id UUID REFERENCES admin_users (id) ON DELETE SET NULL,
@@ -3468,9 +3493,10 @@ async function storeApplicationWebhookEvent(application, event) {
     await currentPool.query(
       `
         INSERT INTO application_webhook_events (
-          id, application_id, event_type, payload, amount, currency, occurred_at, created_at
+          id, application_id, event_type, payload, amount, currency, occurred_at, created_at, idempotency_key
         )
-        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)
+        ON CONFLICT (application_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
       `,
       [
         crypto.randomUUID(),
@@ -3481,6 +3507,7 @@ async function storeApplicationWebhookEvent(application, event) {
         event.currency,
         event.occurredAt,
         now,
+        event.idempotencyKey || null,
       ]
     );
     await currentPool.query("UPDATE connected_applications SET last_sync = $1, updated_at = $1 WHERE id = $2", [now, application.id]);
@@ -3513,6 +3540,61 @@ async function storeApplicationWebhookEvent(application, event) {
     updatedAt: now,
   };
   await writeApplications(applications);
+}
+
+function mapLeadIntelligenceRow(row) {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    externalOpportunityId: row.external_opportunity_id,
+    companyName: row.company_name,
+    score: Number(row.score || 0),
+    confidence: Number(row.confidence || 0),
+    recommendedService: row.recommended_service || "",
+    commercialStatus: row.commercial_status || "approved",
+    assignedTo: row.assigned_to || "",
+    commercialResult: row.commercial_result || "",
+    leadIntelligenceUrl: row.lead_intelligence_url || "",
+    correlationId: row.correlation_id || "",
+    receivedAt: toIsoDate(row.received_at),
+    updatedAt: toIsoDate(row.updated_at),
+  };
+}
+
+async function upsertLeadIntelligenceOpportunity(application, payload) {
+  const currentPool = getPool();
+  if (!currentPool) return null;
+  await ensureDatabase();
+  const externalId = sanitizeText(payload.externalOpportunityId);
+  const companyName = sanitizeText(payload.companyName);
+  if (!externalId || !companyName) return null;
+  const result = await currentPool.query(
+    `INSERT INTO lead_intelligence_opportunities (
+      id, application_id, external_opportunity_id, company_name, score, confidence,
+      recommended_service, commercial_status, lead_intelligence_url, correlation_id
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    ON CONFLICT (application_id, external_opportunity_id) DO UPDATE SET
+      company_name=EXCLUDED.company_name, score=EXCLUDED.score, confidence=EXCLUDED.confidence,
+      recommended_service=EXCLUDED.recommended_service, commercial_status=EXCLUDED.commercial_status,
+      lead_intelligence_url=EXCLUDED.lead_intelligence_url, correlation_id=EXCLUDED.correlation_id,
+      updated_at=NOW()
+    RETURNING *`,
+    [crypto.randomUUID(), application.id, externalId, companyName, Number(payload.score || 0),
+      Number(payload.confidence || 0), sanitizeText(payload.recommendedService),
+      sanitizeText(payload.commercialStatus || "approved"), sanitizeText(payload.leadIntelligenceUrl),
+      sanitizeText(payload.correlationId)]
+  );
+  return mapLeadIntelligenceRow(result.rows[0]);
+}
+
+async function listLeadIntelligenceOpportunities(applicationId = "") {
+  const currentPool = getPool();
+  if (!currentPool) return [];
+  await ensureDatabase();
+  const result = applicationId
+    ? await currentPool.query("SELECT * FROM lead_intelligence_opportunities WHERE application_id=$1 ORDER BY score DESC, updated_at DESC", [applicationId])
+    : await currentPool.query("SELECT * FROM lead_intelligence_opportunities ORDER BY score DESC, updated_at DESC");
+  return result.rows.map(mapLeadIntelligenceRow);
 }
 
 async function writeRequests(requests) {
@@ -4095,7 +4177,11 @@ app.post("/api/webhooks/applications/:id", async (req, res, next) => {
       return res.status(400).json({ message: validation.error });
     }
 
+    validation.payload.idempotencyKey = sanitizeText(req.get("x-idempotency-key"));
     await storeApplicationWebhookEvent(application, validation.payload);
+    if (validation.payload.eventType === "lead.opportunity.approved") {
+      await upsertLeadIntelligenceOpportunity(application, validation.payload.payload);
+    }
     return res.status(202).json({ message: "Evento recibido.", eventType: validation.payload.eventType });
   } catch (error) {
     return next(error);
@@ -4638,6 +4724,21 @@ app.get("/api/v1/orders", requireApplicationAuth, async (req, res, next) => {
     });
 
     return res.json({ orders: orders.map(publicOrder), total });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/v1/lead-opportunities/outcomes", requireApplicationAuth, async (req, res, next) => {
+  try {
+    const opportunities = await listLeadIntelligenceOpportunities(req.application.id);
+    return res.json({ opportunities: opportunities.map((item) => ({
+      externalOpportunityId: item.externalOpportunityId,
+      owner: item.assignedTo,
+      result: item.commercialResult,
+      commercialStatus: item.commercialStatus,
+      updatedAt: item.updatedAt,
+    })) });
   } catch (error) {
     return next(error);
   }
@@ -5802,6 +5903,34 @@ app.get("/api/admin/applications", async (_req, res, next) => {
   try {
     const applications = await readApplications();
     return res.json({ applications });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/admin/lead-intelligence/opportunities", async (_req, res, next) => {
+  try {
+    return res.json({ opportunities: await listLeadIntelligenceOpportunities() });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.patch("/api/admin/lead-intelligence/opportunities/:externalId", async (req, res, next) => {
+  try {
+    const currentPool = getPool();
+    if (!currentPool) return res.status(503).json({ message: "PostgreSQL es requerido para Inteligencia comercial." });
+    await ensureDatabase();
+    const status = sanitizeText(req.body.commercialStatus || "assigned");
+    const allowed = new Set(["approved", "assigned", "contacted", "qualified", "won", "lost"]);
+    if (!allowed.has(status)) return res.status(400).json({ message: "Estado comercial inválido." });
+    const result = await currentPool.query(
+      `UPDATE lead_intelligence_opportunities SET assigned_to=$2, commercial_result=$3,
+       commercial_status=$4, updated_at=NOW() WHERE external_opportunity_id=$1 RETURNING *`,
+      [req.params.externalId, sanitizeText(req.body.assignedTo), sanitizeText(req.body.commercialResult), status]
+    );
+    if (!result.rowCount) return res.status(404).json({ message: "Oportunidad no encontrada." });
+    return res.json({ opportunity: mapLeadIntelligenceRow(result.rows[0]), message: "Resultado comercial actualizado." });
   } catch (error) {
     return next(error);
   }

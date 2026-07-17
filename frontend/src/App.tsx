@@ -11,6 +11,7 @@ import AdminFollowups from "./pages/AdminFollowups";
 import AdminPlaceholder from "./pages/AdminPlaceholder";
 import AdminBilling from "./pages/AdminBilling";
 import AdminIntegrations from "./pages/AdminIntegrations";
+import AdminLeadIntelligence from "./pages/AdminLeadIntelligence";
 import AdminPayments from "./pages/AdminPayments";
 import AdminProfile from "./pages/AdminProfile";
 import AdminProjects from "./pages/AdminProjects";
@@ -96,6 +97,16 @@ function App() {
             <ProtectedAdminRoute>
               <Layout>
                 <AdminCompanies />
+              </Layout>
+            </ProtectedAdminRoute>
+          }
+        />
+        <Route
+          path="/admin/inteligencia-comercial"
+          element={
+            <ProtectedAdminRoute>
+              <Layout>
+                <AdminLeadIntelligence />
               </Layout>
             </ProtectedAdminRoute>
           }

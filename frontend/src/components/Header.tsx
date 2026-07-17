@@ -25,6 +25,7 @@ export default function Header({ collapsed, onMenuButtonClick }: Props) {
     "/admin/usuarios": { current: "Usuarios", next: "Nuevo usuario" },
     "/admin/ajustes": { current: "Ajustes" },
     "/admin/empresas": { current: "Empresas" },
+    "/admin/inteligencia-comercial": { current: "Inteligencia comercial" },
     "/admin/roles-permisos": { current: "Roles y permisos" },
     "/admin/productos": { current: "Productos" },
     "/admin/proyectos": { current: "Proyectos" },
