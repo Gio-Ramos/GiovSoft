@@ -13305,3 +13305,6 @@ tr:has(.clients-action-menu.is-open) {
 .sat-uninvoiced-row button { border: 1px solid rgba(29, 78, 216, 0.5); background: transparent; color: inherit; border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
 .sat-uninvoiced-row button:hover { background: rgba(29, 78, 216, 0.1); }
 .sat-uninvoiced-note { margin: 10px 0 0; font-size: 0.82rem; opacity: 0.75; }
+.lead-intelligence-shell { display: grid; gap: 1.4rem; }
+.lead-intelligence-table input, .lead-intelligence-table select { background: var(--admin-surface, #fff); border: 1px solid #dfe6ef; border-radius: .55rem; min-height: 2.6rem; padding: 0 .7rem; min-width: 9rem; }
+.lead-intelligence-table a { align-items: center; color: #4169ff; display: inline-flex; font-weight: 800; gap: .4rem; }
