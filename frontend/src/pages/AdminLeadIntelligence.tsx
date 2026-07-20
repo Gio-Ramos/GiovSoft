@@ -49,6 +49,11 @@ export default function AdminLeadIntelligence() {
     setMessage("Resultado comercial guardado y disponible para Lead Intelligence.");
   }
 
+  async function openLead(item: LeadOpportunity) {
+    const response = await api.post("/api/admin/lead-intelligence/sso", { opportunityId: item.externalOpportunityId });
+    window.open(response.data.url, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <section className="lead-intelligence-shell">
       <div className="clients-page-head"><div><h2>Inteligencia comercial</h2><p>Oportunidades verificadas por Lead Intelligence, listas para asignación y seguimiento.</p></div><button className="clients-secondary-action" onClick={load} type="button"><RefreshCw size={18} /> Actualizar</button></div>
@@ -65,7 +70,7 @@ export default function AdminLeadIntelligence() {
           <td><input value={item.assignedTo} onChange={(event) => change(item.externalOpportunityId, "assignedTo", event.target.value)} placeholder="Ej. Giovanni" /></td>
           <td><select value={item.commercialStatus} onChange={(event) => change(item.externalOpportunityId, "commercialStatus", event.target.value)}>{Object.entries(statusLabels).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></td>
           <td><input value={item.commercialResult} onChange={(event) => change(item.externalOpportunityId, "commercialResult", event.target.value)} placeholder="Nota o resultado" /></td>
-          <td>{item.leadIntelligenceUrl && <a href={item.leadIntelligenceUrl} target="_blank" rel="noreferrer"><ExternalLink size={17} /> Abrir</a>}</td>
+          <td>{item.leadIntelligenceUrl && <button className="clients-row-action" onClick={() => openLead(item)} type="button"><ExternalLink size={17} /> Abrir</button>}</td>
           <td><button className="clients-row-action" onClick={() => save(item)} type="button"><Save size={17} /></button></td>
         </tr>)}
         {!items.length && <tr><td className="quotes-empty-row" colSpan={8}>Aún no hay oportunidades aprobadas desde Lead Intelligence.</td></tr>}
