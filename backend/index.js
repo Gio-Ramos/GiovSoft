@@ -318,6 +318,16 @@ function signPayload(payload) {
   return crypto.createHmac("sha256", adminTokenSecret).update(payload).digest("base64url");
 }
 
+function createLeadSsoToken(user) {
+  const secret = String(process.env.GIOVSOFT_SSO_SECRETS || "").split(",").map((item) => item.trim()).filter(Boolean)[0] || "";
+  if (secret.length < 32) throw Object.assign(new Error("GIOVSOFT_SSO_SECRETS no está configurado."), { code: "SSO_NOT_CONFIGURED" });
+  const now = Math.floor(Date.now() / 1000);
+  const payload = base64UrlEncode(JSON.stringify({ iss: "giovsoft-hub", aud: "lead-intelligence", sub: user.id,
+    email: user.email, name: user.name, role: "admin", jti: crypto.randomUUID(), iat: now, exp: now + 60 }));
+  const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
 function createPasswordHash(password) {
   const salt = crypto.randomBytes(16).toString("base64url");
   const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("base64url");
@@ -5912,6 +5922,19 @@ app.get("/api/admin/lead-intelligence/opportunities", async (_req, res, next) =>
   try {
     return res.json({ opportunities: await listLeadIntelligenceOpportunities() });
   } catch (error) {
+    return next(error);
+  }
+});
+
+app.post("/api/admin/lead-intelligence/sso", (req, res, next) => {
+  try {
+    const token = createLeadSsoToken(req.adminUser);
+    const baseUrl = String(process.env.LEAD_PUBLIC_URL || "https://lead.giovsoft.com").replace(/\/$/, "");
+    const opportunityId = sanitizeText(req.body?.opportunityId || "");
+    const path = opportunityId ? `/oportunidades/${encodeURIComponent(opportunityId)}` : "/";
+    return res.json({ url: `${baseUrl}${path}#sso_token=${encodeURIComponent(token)}`, expiresIn: 60 });
+  } catch (error) {
+    if (error.code === "SSO_NOT_CONFIGURED") return res.status(503).json({ message: error.message });
     return next(error);
   }
 });
